@@ -1,0 +1,30 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+/teal
+
+# Test and coverage artifacts
+*.test
+*.out
+coverage.*
+*.coverprofile
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Environment
+.env
+.envrc
+.direnv/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+.DS_Store
