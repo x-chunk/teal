@@ -1,7 +1,5 @@
-BINARY := teal
 PKG := ./...
 GOFLAGS ?=
-LDFLAGS := -s -w -X main.version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .DEFAULT_GOAL := help
 
@@ -40,4 +38,4 @@ check: fmt vet test ## Format, vet and test
 
 .PHONY: clean
 clean: ## Remove build artifacts
-	rm -rf bin coverage.out
+	rm -f coverage.out

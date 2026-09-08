@@ -20,9 +20,24 @@ type Request struct {
 	Path   string     // relative to the base URL, e.g. "v1/messages/search"
 	Query  url.Values // optional
 	Body   any        // marshalled as JSON when not nil
+
+	// Idempotent says that sending this request twice does what sending it
+	// once does, which is what decides whether it may be retried after a
+	// failure on the server's side. Reads set it; so do the archive's
+	// queries, which are POSTs only because a query does not fit in a URL.
+	//
+	// A write leaves it false and is never retried on a 500: the request
+	// may well have taken effect before the process failed, and a second
+	// vault entry is worse than an error. A rate refusal is retried either
+	// way, because nothing was done.
+	Idempotent bool
 }
 
 // Do sends req and decodes the envelope's data field into a T.
+//
+// The *Meta is nil only when the request never reached the API — a transport
+// failure, or a body that would not marshal. Every answer, refusal included,
+// carries one.
 //
 // T is in the result and not in the arguments, so it is always given
 // explicitly:
@@ -39,12 +54,23 @@ func (c *Client) Do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 	}
 	defer resp.Body.Close()
 
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	if err != nil {
+		return out, meta, fmt.Errorf("teal: reading %s %s: %w", req.Method, req.Path, err)
+	}
+
 	var env struct {
 		OK   bool            `json:"ok"`
 		Data json.RawMessage `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+	if err := json.Unmarshal(raw, &env); err != nil {
 		return out, meta, fmt.Errorf("teal: decoding %s %s: %w", req.Method, req.Path, err)
+	}
+	// A refusal normally arrives with a status to match, and send has turned
+	// it into an *Error already. One that arrives with a 2xx would otherwise
+	// read as an empty answer, which is worse than an error.
+	if !env.OK {
+		return out, meta, errorFromBody(raw, resp.StatusCode, meta)
 	}
 	if len(env.Data) == 0 || string(env.Data) == "null" {
 		return out, meta, nil
@@ -102,8 +128,7 @@ func (c *Client) send(ctx context.Context, req Request) (*http.Response, *Meta, 
 		}
 
 		apiErr := decodeError(resp, meta)
-		resp.Body.Close()
-		if attempt >= c.maxRetries || !apiErr.retryable() {
+		if attempt >= c.maxRetries || !apiErr.retryable(req.Idempotent) {
 			return nil, meta, apiErr
 		}
 		if err := wait(ctx, c.backoff(attempt, apiErr.RetryAfter)); err != nil {
@@ -191,6 +216,8 @@ func (c Credits) String() string { return "$" + strconv.FormatFloat(c.Dollars(),
 // can meter itself without a second request. It is returned even when the
 // call is refused: the API refunds before it answers, so the balance here is
 // the balance actually left.
+//
+// A method returns a nil *Meta only when the request never reached the API.
 type Meta struct {
 	StatusCode int
 
@@ -233,8 +260,29 @@ func metaFrom(resp *http.Response) *Meta {
 	if n, err := strconv.ParseInt(h.Get("X-Aether-Quota-Reset"), 10, 64); err == nil {
 		m.QuotaReset = time.Unix(n, 0).UTC()
 	}
-	if n, err := strconv.Atoi(h.Get("Retry-After")); err == nil {
-		m.RetryAfter = time.Duration(n) * time.Second
-	}
+	m.RetryAfter = parseRetryAfter(h.Get("Retry-After"))
 	return m
 }
+
+// parseRetryAfter reads the header in both of the forms RFC 9110 allows: a
+// count of seconds, and an HTTP-date.
+func parseRetryAfter(v string) time.Duration {
+	if v == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(v); err == nil {
+		if n < 0 {
+			return 0
+		}
+		return time.Duration(n) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+// maxBody caps what is read from one answer that is not the export.
+const maxBody = 8 << 20

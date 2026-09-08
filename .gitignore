@@ -6,7 +6,6 @@
 *.dylib
 /bin/
 /dist/
-/teal
 
 # Test and coverage artifacts
 *.test

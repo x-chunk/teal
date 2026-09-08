@@ -25,7 +25,7 @@ type ArchiveService struct{ base }
 //
 // POST /v1/messages/search.
 func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (SearchResult, *Meta, error) {
-	return s.post[SearchResult](ctx, "v1/messages/search", req)
+	return s.query[SearchResult](ctx, "v1/messages/search", req)
 }
 
 // Count answers the same query with the number of matches and nothing else.
@@ -36,7 +36,7 @@ func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (SearchR
 //
 // POST /v1/messages/count.
 func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) (CountResult, *Meta, error) {
-	return s.post[CountResult](ctx, "v1/messages/count", req)
+	return s.query[CountResult](ctx, "v1/messages/count", req)
 }
 
 // Export streams every match as one JSON document, for a client to write

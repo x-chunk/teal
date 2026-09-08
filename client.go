@@ -18,6 +18,7 @@ type Client struct {
 	userAgent  string
 	maxRetries int
 	retryBase  time.Duration
+	timeout    time.Duration
 
 	// The API, grouped as the documentation groups it.
 	App      *AppService
@@ -38,7 +39,7 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 	c := &Client{
 		apiKey:     apiKey,
 		auth:       AuthBearer,
-		http:       &http.Client{Timeout: 30 * time.Second},
+		http:       &http.Client{Transport: defaultTransport()},
 		userAgent:  "teal-go/" + Version,
 		maxRetries: 2,
 		retryBase:  500 * time.Millisecond,
@@ -51,6 +52,13 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 			return nil, err
 		}
 	}
+	if c.timeout > 0 {
+		// Copied rather than set, so that a caller's own http.Client is not
+		// mutated behind its back and the order of the options cannot matter.
+		hc := *c.http
+		hc.Timeout = c.timeout
+		c.http = &hc
+	}
 
 	c.App = &AppService{base{c}}
 	c.Archive = &ArchiveService{base{c}}
@@ -59,6 +67,17 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 	c.Insights = &InsightsService{base{c}}
 	c.Settings = &SettingsService{base{c}}
 	return c, nil
+}
+
+// defaultTransport bounds the parts of a request that can hang without
+// bounding the whole of it. There is deliberately no Timeout on the
+// http.Client: it would cover reading the body as well, and an export can be
+// 50 MB. Give a call a deadline through its context, or WithTimeout.
+func defaultTransport() http.RoundTripper {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.ResponseHeaderTimeout = 30 * time.Second
+	t.ExpectContinueTimeout = 1 * time.Second
+	return t
 }
 
 // Option configures a Client. Options are applied in order by New.
@@ -87,6 +106,20 @@ func WithHTTPClient(h *http.Client) Option {
 			return fmt.Errorf("teal: nil http client")
 		}
 		c.http = h
+		return nil
+	}
+}
+
+// WithTimeout puts a deadline on the whole of every request, the reading of
+// the body included. It is off by default, because an export is a stream
+// whose length is not known in advance and a deadline would tear it in half.
+// A per-call context is the finer instrument.
+func WithTimeout(d time.Duration) Option {
+	return func(c *Client) error {
+		if d < 0 {
+			return fmt.Errorf("teal: negative timeout %s", d)
+		}
+		c.timeout = d
 		return nil
 	}
 }

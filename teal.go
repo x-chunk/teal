@@ -17,9 +17,11 @@
 //
 // Failures are *Error, carrying the API's own code. Branch on the code with
 // IsCode and never on the message, which is written for a person reading a
-// log. The transport retries a rate refusal and a failure on the server's
-// side, honouring Retry-After; a spent quota is never retried, because it
-// only turns when its window does.
+// log. The transport retries a rate refusal, honouring Retry-After, and a
+// failure on the server's side when the call can safely be repeated — reads,
+// deletes and the archive's queries. A write is not sent again, because it
+// may have taken effect before the process failed. A spent quota is never
+// retried either: it turns when its window does and not before.
 package teal
 
 // Version is this client's version, sent in the User-Agent header.

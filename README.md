@@ -72,6 +72,13 @@ The helpers on `base` are `get`, `post`, `patch`, `del` and `postRaw`; `none`
 is the payload of an endpoint answering `{}`. When none of them fits, reach for
 `s.c.Do[T](ctx, Request{…})` underneath.
 
+## One thing taken on faith
+
+`GET /v1/usage` with `by_day=true` returns a day-by-day breakdown that the
+documentation describes but does not show, so `Usage.Days` and `UsageDay.Day`
+are guesses at those two JSON keys. Everything else is built from the response
+examples in the docs, and `App.Get` is tested against one of them verbatim.
+
 ## Development
 
 ```sh

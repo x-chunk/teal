@@ -75,24 +75,43 @@ func AsError(err error) (*Error, bool) {
 }
 
 // retryable reports whether a request refused this way is worth sending
-// again: a rate refusal, and a failure on the server's side. A spent quota is
-// not — it only turns when its window does.
-func (e *Error) retryable() bool {
-	switch e.Code {
-	case CodeRateLimited, CodeInternal:
-		return true
+// again.
+//
+// A rate refusal always is: nothing was done, and the shield says when to
+// come back. A failure on the server's side only is when the request can be
+// repeated safely — the process may have failed after the work was done, and
+// a second vault entry is worse than an error. A spent quota never is: it
+// turns when its window does and not before. Neither does unavailable, which
+// says the API is not configured on this deployment at all.
+func (e *Error) retryable(idempotent bool) bool {
+	if e.Code == CodeRateLimited || e.StatusCode == http.StatusTooManyRequests {
+		return e.Code != CodeQuotaExhausted
 	}
-	return e.StatusCode >= 500 && e.Code != CodeUnavailable
+	if e.Code == CodeUnavailable {
+		return false
+	}
+	return idempotent && (e.Code == CodeInternal || e.StatusCode >= 500)
 }
 
-// decodeError reads the refusal body, falling back to the status when the
-// body is not the envelope — a proxy in front of the API, say.
+// decodeError reads a refusal off the wire. The body is drained and closed,
+// so the connection can be reused.
 func decodeError(resp *http.Response, meta *Meta) *Error {
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	return errorFromBody(raw, resp.StatusCode, meta)
+}
+
+// errorFromBody builds the *Error, falling back to the status when the body
+// is not the envelope — a proxy in front of the API, say.
+func errorFromBody(raw []byte, status int, meta *Meta) *Error {
 	e := &Error{
-		StatusCode: resp.StatusCode,
-		Code:       codeForStatus(resp.StatusCode),
-		RetryAfter: meta.RetryAfter,
+		StatusCode: status,
+		Code:       codeForStatus(status),
 		Meta:       meta,
+	}
+	if meta != nil {
+		e.RetryAfter = meta.RetryAfter
 	}
 
 	var env struct {
@@ -105,7 +124,7 @@ func decodeError(resp *http.Response, meta *Meta) *Error {
 			ResetAt    int64  `json:"reset_at"`
 		} `json:"error"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&env); err == nil && env.Error != nil {
+	if err := json.Unmarshal(raw, &env); err == nil && env.Error != nil {
 		e.Code = env.Error.Code
 		e.Message = env.Error.Message
 		e.Limit = env.Error.Limit
@@ -115,13 +134,18 @@ func decodeError(resp *http.Response, meta *Meta) *Error {
 			e.ResetAt = time.Unix(env.Error.ResetAt, 0).UTC()
 		}
 	}
-	if e.ResetAt.IsZero() && !meta.QuotaReset.IsZero() {
+	if meta != nil && e.ResetAt.IsZero() && !meta.QuotaReset.IsZero() {
 		e.ResetAt = meta.QuotaReset
 	}
 	return e
 }
 
 func codeForStatus(status int) string {
+	if status < 300 {
+		// A refusal that arrived with a success status says nothing about
+		// itself but what is in its body.
+		return CodeInternal
+	}
 	switch status {
 	case http.StatusBadRequest:
 		return CodeBadRequest
