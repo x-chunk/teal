@@ -35,7 +35,7 @@ func TestDoDecodesEnvelopeAndCostHeaders(t *testing.T) {
 	type count struct {
 		Total int `json:"total"`
 	}
-	out, meta, err := Do[count](context.Background(), c, Request{
+	out, meta, err := c.Do[count](context.Background(), Request{
 		Method: http.MethodPost,
 		Path:   "v1/messages/count",
 		Body:   map[string]any{"conditions": []any{}},
@@ -71,7 +71,7 @@ func TestRefusalBecomesError(t *testing.T) {
 			"limit":"search:daily","used":2000,"limit_value":2000,"reset_at":1757203200}}`)
 	})
 
-	_, _, err := Do[struct{}](context.Background(), c, Request{Method: http.MethodGet, Path: "v1/app"})
+	_, _, err := c.Do[none](context.Background(), Request{Method: http.MethodGet, Path: "v1/app"})
 	if !IsCode(err, CodeQuotaExhausted) {
 		t.Fatalf("err = %v, want quota_exhausted", err)
 	}
@@ -105,7 +105,7 @@ func TestRetriesRateRefusalButNotASpentQuota(t *testing.T) {
 				io.WriteString(w, `{"ok":false,"error":{"code":"`+tc.code+`"}}`)
 			}, WithRetry(2, time.Millisecond))
 
-			Do[struct{}](context.Background(), c, Request{Method: http.MethodGet, Path: "v1/app"})
+			c.Do[none](context.Background(), Request{Method: http.MethodGet, Path: "v1/app"})
 			if calls != tc.calls {
 				t.Errorf("calls = %d, want %d", calls, tc.calls)
 			}

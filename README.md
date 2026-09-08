@@ -15,7 +15,8 @@ go get github.com/x-chunk/teal
 teal/
 ├── teal.go            — package doc, version, default base URL
 ├── client.go          — the Client and its options
-├── transport.go       — the HTTP client: Request, Do[T], DoRaw, Meta
+├── transport.go       — the HTTP client: Request, (*Client).Do[T], DoRaw, Meta
+├── service.go         — base, embedded in every service: get/post/patch/del[T]
 ├── errors.go          — *Error, the code constants, IsCode/AsError
 ├── models.go          — the payload types (yours to write)
 ├── app.go             — /v1/app, /usage, /account, /quotas, /prices
@@ -27,31 +28,43 @@ teal/
 └── transport_test.go  — the transport against an httptest server
 ```
 
-`transport.go`, `client.go` and `errors.go` are written. The six service files
-hold nothing but the service type and the endpoints it is for; `models.go`
-holds nothing but `Money`. That is the part left to write.
+`transport.go`, `service.go`, `client.go` and `errors.go` are written. The six
+service files hold nothing but the service type and the endpoints it is for;
+`models.go` holds nothing but `Money`. That is the part left to write.
 
 ## Writing an endpoint
 
-Everything goes through one generic function, so a method is three lines:
+Every service embeds `base`, whose generic methods fold a call down to one
+line. Write the payload type in `models.go`, then:
 
 ```go
 func (s *AppService) Get(ctx context.Context) (Application, *Meta, error) {
-	return Do[Application](ctx, s.c, Request{Method: http.MethodGet, Path: "v1/app"})
+	return s.get[Application](ctx, "v1/app", nil)
+}
+
+func (s *AppService) Quotas(ctx context.Context) ([]Quota, *Meta, error) {
+	return s.get[[]Quota](ctx, "v1/quotas", nil)
 }
 
 func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (SearchPage, *Meta, error) {
-	return Do[SearchPage](ctx, s.c, Request{
-		Method: http.MethodPost,
-		Path:   "v1/messages/search",
-		Body:   req,
-	})
+	return s.post[SearchPage](ctx, "v1/messages/search", req)
+}
+
+// an endpoint answering {} — only the Meta and the error are worth having
+func (s *VaultService) Rename(ctx context.Context, from, to string) (*Meta, error) {
+	_, meta, err := s.post[none](ctx, "v1/vault/entries/rename",
+		map[string]string{"passphrase": from, "new_passphrase": to})
+	return meta, err
 }
 ```
 
-`Do[T]` unwraps the `{"ok":true,"data":…}` envelope into a `T`. The export is
-the one endpoint that answers with a document instead — `DoRaw` hands its body
-back undecoded, for the caller to close.
+The type is always written out: it is in the result, and Go infers only from
+arguments.
+
+Underneath, `(*Client).Do[T]` unwraps the `{"ok":true,"data":…}` envelope into
+a `T`; call it directly with a `Request` when a helper does not fit. The export
+is the one endpoint answering with a document instead — `s.postRaw` hands its
+body back undecoded, for the caller to close.
 
 ## What comes back
 

@@ -5,4 +5,4 @@ package teal
 // A portrait that has not been built yet answers CodeNotFound with a
 // Retry-After: the model fits in the background and nothing is charged for an
 // answer that was not given.
-type InsightsService struct{ c *Client }
+type InsightsService struct{ base }

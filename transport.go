@@ -24,12 +24,14 @@ type Request struct {
 
 // Do sends req and decodes the envelope's data field into a T.
 //
-// It is a function rather than a method because methods cannot be generic:
+// T is in the result and not in the arguments, so it is always given
+// explicitly:
 //
-//	func (s *AppService) Get(ctx context.Context) (Application, *Meta, error) {
-//		return Do[Application](ctx, s.c, Request{Method: http.MethodGet, Path: "v1/app"})
-//	}
-func Do[T any](ctx context.Context, c *Client, req Request) (T, *Meta, error) {
+//	app, meta, err := c.Do[Application](ctx, Request{Method: http.MethodGet, Path: "v1/app"})
+//
+// Services reach for the get/post/patch/del helpers on base instead, which
+// are this with the boilerplate folded away.
+func (c *Client) Do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 	var out T
 	resp, meta, err := c.send(ctx, req)
 	if err != nil {
@@ -56,7 +58,7 @@ func Do[T any](ctx context.Context, c *Client, req Request) (T, *Meta, error) {
 // DoRaw sends req and hands back the undecoded body, for the one endpoint
 // that answers with a document instead of the envelope — the export. The
 // caller closes it.
-func DoRaw(ctx context.Context, c *Client, req Request) (io.ReadCloser, *Meta, error) {
+func (c *Client) DoRaw(ctx context.Context, req Request) (io.ReadCloser, *Meta, error) {
 	resp, meta, err := c.send(ctx, req)
 	if err != nil {
 		return nil, meta, err

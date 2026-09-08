@@ -6,4 +6,4 @@ package teal
 // A passphrase travels in a body and never in a path or a query, which is why
 // deleting by passphrase is a POST. A wrong passphrase answers CodeNotFound,
 // deliberately the same as one that addresses nothing.
-type VaultService struct{ c *Client }
+type VaultService struct{ base }

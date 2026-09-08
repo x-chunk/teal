@@ -6,4 +6,4 @@ package teal
 //
 // Nothing here writes: a message enters the archive by being sent and by no
 // other route. The export does not answer in the envelope — reach for DoRaw.
-type ArchiveService struct{ c *Client }
+type ArchiveService struct{ base }

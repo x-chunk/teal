@@ -52,12 +52,12 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 		}
 	}
 
-	c.App = &AppService{c: c}
-	c.Archive = &ArchiveService{c: c}
-	c.Vault = &VaultService{c: c}
-	c.Actions = &ActionsService{c: c}
-	c.Insights = &InsightsService{c: c}
-	c.Settings = &SettingsService{c: c}
+	c.App = &AppService{base{c}}
+	c.Archive = &ArchiveService{base{c}}
+	c.Vault = &VaultService{base{c}}
+	c.Actions = &ActionsService{base{c}}
+	c.Insights = &InsightsService{base{c}}
+	c.Settings = &SettingsService{base{c}}
 	return c, nil
 }
 

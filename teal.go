@@ -4,12 +4,13 @@
 //	if err != nil {
 //		return err
 //	}
-//	app, meta, err := Do[Application](ctx, c, Request{Method: http.MethodGet, Path: "v1/app"})
+//	app, meta, err := c.App.Get(ctx)
 //
 // The transport is in transport.go and is complete: authentication, the
 // {"ok":…} envelope, the X-Aether-* cost headers, retries and error decoding.
-// Everything else — the payload types in models.go and the service methods in
-// app.go, archive.go and the rest — is left to be written.
+// service.go turns it into the get/post/patch/del helpers every service is
+// written against. Everything else — the payload types in models.go and the
+// methods in app.go, archive.go and the rest — is left to be written.
 package teal
 
 // Version is this client's version, sent in the User-Agent header.
