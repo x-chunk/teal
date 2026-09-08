@@ -18,67 +18,59 @@ teal/
 ├── transport.go       — the HTTP client: Request, (*Client).Do[T], DoRaw, Meta
 ├── service.go         — base, embedded in every service: get/post/patch/del[T]
 ├── errors.go          — *Error, the code constants, IsCode/AsError
-├── models.go          — the payload types (yours to write)
+├── models.go          — every payload and request type
 ├── app.go             — /v1/app, /usage, /account, /quotas, /prices
 ├── archive.go         — /v1/messages/*, /chats, /fields
 ├── vault.go           — /v1/vault/entries*
 ├── actions.go         — /v1/actions*
 ├── insights.go        — /v1/insights, /portraits/{chat}
 ├── settings.go        — /v1/settings/*
-└── transport_test.go  — the transport against an httptest server
+├── example_test.go    — the runnable godoc examples
+├── services_test.go   — the endpoints against an httptest server
+└── transport_test.go  — the transport itself
 ```
+
+All 35 documented endpoints are covered.
 
 `transport.go`, `service.go`, `client.go` and `errors.go` are written. The six
 service files hold nothing but the service type and the endpoints it is for;
 `models.go` holds nothing but `Money`. That is the part left to write.
 
-## Writing an endpoint
+## Conventions
 
-Every service embeds `base`, whose generic methods fold a call down to one
-line. Write the payload type in `models.go`, then:
+**One request type per call, named `<Service><Action>Request`.** The body of a
+call is a struct and never a bare map or a row of positional arguments, so the
+wire format lives in one place, a typo in a field will not compile, and the API
+can gain a field without breaking anyone's build.
+
+**Required fields are values, optional fields are pointers with `omitempty`.**
+It matters wherever zero means something: `RetentionUpdateRequest.TTLSeconds`
+set to zero turns the window off, and leaving it nil leaves it alone. The two
+must be different, and only a pointer makes them so.
+
+**Ids from the path stay ordinary arguments** — `Update(ctx, id, req)`. The
+struct is exactly the body, so it can be marshalled and compared against the
+documentation one to one.
+
+**Query parameters are structs too**, with an unexported `query()` that builds
+the `url.Values`. A nil request means the API's own defaults.
+
+**Every method returns `(payload, *Meta, error)`**, and one that answers `{}`
+returns just `(*Meta, error)`.
+
+## Adding an endpoint
+
+Write the payload type in `models.go`, then one line in the service file:
 
 ```go
-func (s *AppService) Get(ctx context.Context) (Application, *Meta, error) {
-	return s.get[Application](ctx, "v1/app", nil)
-}
-
 func (s *AppService) Quotas(ctx context.Context) ([]Quota, *Meta, error) {
 	return s.get[[]Quota](ctx, "v1/quotas", nil)
 }
-
-func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (SearchPage, *Meta, error) {
-	return s.post[SearchPage](ctx, "v1/messages/search", req)
-}
-
-// an endpoint answering {} — only the Meta and the error are worth having
-func (s *VaultService) Rename(ctx context.Context, from, to string) (*Meta, error) {
-	_, meta, err := s.post[none](ctx, "v1/vault/entries/rename",
-		map[string]string{"passphrase": from, "new_passphrase": to})
-	return meta, err
-}
 ```
 
-The type is always written out: it is in the result, and Go infers only from
-arguments.
-
-Underneath, `(*Client).Do[T]` unwraps the `{"ok":true,"data":…}` envelope into
-a `T`; call it directly with a `Request` when a helper does not fit. The export
-is the one endpoint answering with a document instead — `s.postRaw` hands its
-body back undecoded, for the caller to close.
-
-## What comes back
-
-Every call returns three things: its payload, a `*Meta` and an error.
-
-- **`*Meta`** is what the request cost, read from the `X-Aether-*` headers: the
-  billing mode, the credits spent, the balance left, the operations billed.
-  It is returned on a refusal too, because the API refunds before it answers,
-  so the balance in it is the balance actually left.
-- **errors** are `*Error`, carrying the API's own `code`. Branch on the code —
-  `teal.IsCode(err, teal.CodeNotFound)` — and never on the message.
-
-Retries cover rate refusals and server failures, honouring `Retry-After`. A
-spent quota is never retried: it only turns when its window does.
+The helpers on `base` are `get`, `post`, `patch`, `del` and `postRaw`; `none`
+is the payload of an endpoint answering `{}`. When none of them fits, reach for
+`s.c.Do[T](ctx, Request{…})` underneath.
 
 ## Development
 
