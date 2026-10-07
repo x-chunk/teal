@@ -139,6 +139,10 @@ func TestServerFailureIsRetriedOnlyWhenItIsSafe(t *testing.T) {
 			_, _, err := c.Archive.Count(context.Background(), SearchRequest{})
 			return err
 		}, 3},
+		{"page", func(c *Client) error {
+			_, _, err := c.Archive.SearchPage(context.Background(), SearchPageRequest{QueryID: "q", Page: 1})
+			return err
+		}, 3},
 		{"delete", func(c *Client) error { _, err := c.Actions.Delete(context.Background(), 3); return err }, 3},
 		{"write", func(c *Client) error {
 			_, _, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"})
@@ -187,6 +191,123 @@ func TestRateRefusalIsRetriedEvenOnAWrite(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
+	}
+}
+
+// Busy is answered before any of the work began, so even a write is sent
+// again. A locked vault and an unavailable portrait are not: each turns on a
+// clock longer than a call should block on.
+func TestRetryFollowsWhatTheRefusalSays(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		call   func(*Client) error
+		code   string
+		calls  int
+	}{
+		{"busy write", http.StatusServiceUnavailable,
+			`{"ok":false,"error":{"code":"busy","message":"the vault is busy; retry shortly"}}`,
+			func(c *Client) error {
+				_, _, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"})
+				return err
+			}, CodeBusy, 3},
+		{"locked vault", http.StatusTooManyRequests,
+			`{"ok":false,"error":{"code":"rate_limited","message":"locked","retry_after":900,"reason":"vault_locked"}}`,
+			func(c *Client) error {
+				_, _, err := c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"})
+				return err
+			}, CodeRateLimited, 1},
+		{"model training", http.StatusServiceUnavailable,
+			`{"ok":false,"error":{"code":"unavailable","message":"fitting","retry_after":60,"reason":"model_training"}}`,
+			func(c *Client) error {
+				_, _, err := c.Insights.Portrait(context.Background(), -100)
+				return err
+			}, CodeUnavailable, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls int
+			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(tc.status)
+				io.WriteString(w, tc.body)
+			}, WithRetry(2, time.Millisecond))
+
+			if err := tc.call(c); !IsCode(err, tc.code) {
+				t.Fatalf("err = %v, want %s", err, tc.code)
+			}
+			if calls != tc.calls {
+				t.Errorf("calls = %d, want %d", calls, tc.calls)
+			}
+		})
+	}
+}
+
+func TestRefusalSaysWhatWouldOpenIt(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		header http.Header
+		body   string
+		check  func(*testing.T, *Error)
+	}{
+		{"scope", http.StatusForbidden, nil,
+			`{"ok":false,"error":{"code":"scope_required","message":"not opened","scope":"vault:write"}}`,
+			func(t *testing.T, e *Error) {
+				if e.Code != CodeScopeRequired || e.Scope != ScopeVaultWrite {
+					t.Errorf("error = %+v", e)
+				}
+			}},
+		{"plan", http.StatusForbidden, nil,
+			`{"ok":false,"error":{"code":"forbidden","message":"no","permission":"search:allow_history","required_plan":"max"}}`,
+			func(t *testing.T, e *Error) {
+				if e.Permission != "search:allow_history" || e.RequiredPlan != "max" {
+					t.Errorf("error = %+v", e)
+				}
+			}},
+		{"reason and header", http.StatusServiceUnavailable, http.Header{"Retry-After": {"60"}},
+			`{"ok":false,"error":{"code":"unavailable","message":"fitting","retry_after":60,"reason":"model_training"}}`,
+			func(t *testing.T, e *Error) {
+				if e.Reason != ReasonModelTraining || e.RetryAfter != time.Minute {
+					t.Errorf("error = %+v", e)
+				}
+			}},
+		{"retry_after without the header", http.StatusServiceUnavailable, nil,
+			`{"ok":false,"error":{"code":"busy","message":"busy","retry_after":5}}`,
+			func(t *testing.T, e *Error) {
+				if e.RetryAfter != 5*time.Second {
+					t.Errorf("retry after = %s, want 5s", e.RetryAfter)
+				}
+			}},
+		{"405 from a proxy", http.StatusMethodNotAllowed, nil, `method not allowed`,
+			func(t *testing.T, e *Error) {
+				if e.Code != CodeMethodNotAllowed {
+					t.Errorf("code = %q", e.Code)
+				}
+			}},
+		{"413 from a proxy", http.StatusRequestEntityTooLarge, nil, `<html>too large</html>`,
+			func(t *testing.T, e *Error) {
+				if e.Code != CodeTooLarge {
+					t.Errorf("code = %q", e.Code)
+				}
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				for k, v := range tc.header {
+					w.Header()[k] = v
+				}
+				w.WriteHeader(tc.status)
+				io.WriteString(w, tc.body)
+			})
+
+			_, _, err := c.App.Get(context.Background())
+			e, ok := AsError(err)
+			if !ok {
+				t.Fatalf("err = %v, want an *Error", err)
+			}
+			tc.check(t, e)
+		})
 	}
 }
 

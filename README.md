@@ -1,7 +1,19 @@
 # teal
 
-A Go client for the [Aether Plug-In API v1](http://144.31.187.78:8080/docs) — your
+A Go client for the [Aether Plug-In API v1](https://aether.xchunk.org/docs) — your
 archive, your vault and your account, through an application key of your own.
+
+```go
+c, err := teal.New(os.Getenv("AETHER_KEY")) // https://aether.xchunk.org by default
+if err != nil {
+	return err
+}
+res, meta, err := c.Archive.Search(ctx, teal.SearchRequest{
+	Conditions: []teal.Condition{{Field: "text", Mode: teal.MatchContains, Value: "invoice"}},
+})
+```
+
+A self-hosted deployment is one option away: `teal.WithBaseURL("https://your-host")`.
 
 ## Install
 
@@ -20,7 +32,7 @@ teal/
 ├── errors.go          — *Error, the code constants, IsCode/AsError
 ├── models.go          — every payload and request type
 ├── app.go             — /v1/app, /usage, /account, /quotas, /prices
-├── archive.go         — /v1/messages/*, /chats, /fields
+├── archive.go         — /v1/messages/*, /messages/search/page, /chats, /fields
 ├── vault.go           — /v1/vault/entries*
 ├── actions.go         — /v1/actions*
 ├── insights.go        — /v1/insights, /portraits/{chat}
@@ -30,11 +42,9 @@ teal/
 └── transport_test.go  — the transport itself
 ```
 
-All 35 documented endpoints are covered.
-
-`transport.go`, `service.go`, `client.go` and `errors.go` are written. The six
-service files hold nothing but the service type and the endpoints it is for;
-`models.go` holds nothing but `Money`. That is the part left to write.
+All 36 endpoints of the public API are covered, and nothing else is: the
+internal and admin APIs of a deployment and its gRPC API are not this client's
+business.
 
 ## Conventions
 
@@ -72,12 +82,25 @@ The helpers on `base` are `get`, `post`, `patch`, `del` and `postRaw`; `none`
 is the payload of an endpoint answering `{}`. When none of them fits, reach for
 `s.c.Do[T](ctx, Request{…})` underneath.
 
-## One thing taken on faith
+## Where the shapes come from
 
-`GET /v1/usage` with `by_day=true` returns a day-by-day breakdown that the
-documentation describes but does not show, so `Usage.Days` and `UsageDay.Day`
-are guesses at those two JSON keys. Everything else is built from the response
-examples in the docs, and `App.Get` is tested against one of them verbatim.
+Every type is built from the API's own route table and response shapes, and
+the tests decode the documentation's response examples verbatim wherever there
+is one. `GET /v1/usage?by_day=true`, which the documentation describes but does
+not show, answers `days` as flat rows — one per operation per day, each with
+its `day` — so `Usage.Days` is a `[]UsageOp`, not a nested type.
+
+## Retries
+
+The transport sends a call again only when doing so cannot do anything twice:
+
+| Refusal | Retried |
+|---|---|
+| `rate_limited`, `busy` | always, after `Retry-After` — nothing was done |
+| `internal`, other 5xx | reads, deletes and the archive's queries only |
+| `quota_exhausted` | never — it turns at `reset_at` |
+| `rate_limited` with reason `vault_locked` | never — the lock outlasts a call |
+| `unavailable` | never — `Error.Reason` and `Error.RetryAfter` say what to do |
 
 ## Development
 

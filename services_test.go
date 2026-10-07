@@ -51,6 +51,120 @@ func TestAppGetDecodesTheDocumentedAnswer(t *testing.T) {
 	}
 }
 
+// The example from the documentation, byte for byte.
+func TestAccountSaysWhenItWasMeasured(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":{
+		"account_id": 1256738876,
+		"plan": {
+			"tier": "max",
+			"name": "Max",
+			"price_cents": 1999,
+			"until": "2026-10-01T00:00:00Z",
+			"permissions": ["glance:allow_insights", "plugin:allow_use"]
+		},
+		"balance_cents": 1204,
+		"quotas": [
+			{"key": "search:daily", "label": "Searches", "unit": "searches", "limit": 2000,
+			 "used": 41, "remaining": 1959, "unlimited": false, "window": "day",
+			 "reset_at": "2026-09-07T00:00:00Z"}
+		],
+		"measured_at": 1757160000}}`)
+
+	acc, _, err := c.App.Account(context.Background())
+	if err != nil {
+		t.Fatalf("App.Account: %v", err)
+	}
+	if acc.Plan.Tier != "max" || len(acc.Plan.Permissions) != 2 {
+		t.Errorf("plan = %+v", acc.Plan)
+	}
+	if want := time.Unix(1757160000, 0).UTC(); !acc.MeasuredAt.At().Equal(want) {
+		t.Errorf("measured_at = %v, want %v", acc.MeasuredAt.At(), want)
+	}
+	if len(acc.Quotas) != 1 || acc.Quotas[0].Remaining != 1959 {
+		t.Errorf("quotas = %+v", acc.Quotas)
+	}
+}
+
+// An unlimited quota has no ceiling to state, and says so with null.
+func TestUnlimitedQuotaDecodes(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":[
+		{"key":"search:daily","label":"Searches","unit":"searches",
+		 "limit":null,"used":41,"remaining":null,"unlimited":true,"window":"day"}]}`)
+
+	quotas, _, err := c.App.Quotas(context.Background())
+	if err != nil {
+		t.Fatalf("App.Quotas: %v", err)
+	}
+	if len(quotas) != 1 || !quotas[0].Unlimited || quotas[0].Used != 41 {
+		t.Errorf("quotas = %+v", quotas)
+	}
+}
+
+func TestUsageBreaksDownByDayAndOperation(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":{
+		"from": "2026-08-08", "to": "2026-09-06", "calls": 40,
+		"credits": {"credits": 25000, "display": "$0.025"},
+		"ops": [
+			{"op": "search:query", "calls": 20, "units": 20, "credits": {"credits": 20000, "display": "$0.02"}},
+			{"op": "messages:read", "calls": 20, "units": 20, "credits": {"credits": 5000, "display": "$0.005"}}
+		],
+		"days": [
+			{"op": "search:query", "calls": 12, "units": 12, "credits": {"credits": 12000, "display": "$0.012"}, "day": "2026-09-06"},
+			{"op": "search:query", "calls": 8, "units": 8, "credits": {"credits": 8000, "display": "$0.008"}, "day": "2026-09-05"}
+		]}}`)
+
+	usage, _, err := c.App.Usage(context.Background(), &UsageRequest{ByDay: true})
+	if err != nil {
+		t.Fatalf("App.Usage: %v", err)
+	}
+	if len(usage.Ops) != 2 || usage.Ops[0].Day != "" {
+		t.Errorf("ops = %+v", usage.Ops)
+	}
+	if len(usage.Days) != 2 || usage.Days[0].Day != "2026-09-06" || usage.Days[1].Calls != 8 {
+		t.Errorf("days = %+v", usage.Days)
+	}
+}
+
+// The example from the documentation, byte for byte — and a rate that is not
+// a whole number, which the API is free to configure.
+func TestPricesDecodesEveryRate(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":{
+		"prices": [
+			{"op": "search:query", "label": "Archive query", "unit": "query",
+			 "price": {"credits": 1000, "display": "$0.001"}, "limit": "search:daily",
+			 "charging": "always", "description": "One search of the archive, or the count behind one."}
+		],
+		"credits_per_cent": 10000,
+		"rates": {
+			"shared":  {"per_second": 10, "burst": 20},
+			"hybrid":  {"per_second": 10, "burst": 20},
+			"credits": {"per_second": 50, "burst": 100}
+		},
+		"account_rate": {"per_second": 60, "burst": 120},
+		"global_rate": {"per_second": 300, "burst": 600},
+		"quota_ttl_seconds": 30}}`)
+
+	prices, _, err := c.App.Prices(context.Background())
+	if err != nil {
+		t.Fatalf("App.Prices: %v", err)
+	}
+	if prices.Rates[BillingCredits].PerSecond != 50 || prices.Prices[0].Charging != ChargingAlways {
+		t.Errorf("prices = %+v", prices)
+	}
+	if prices.AccountRate == nil || prices.AccountRate.Burst != 120 || prices.GlobalRate == nil {
+		t.Errorf("account_rate = %+v, global_rate = %+v", prices.AccountRate, prices.GlobalRate)
+	}
+
+	c, _, _ = serve(t, `{"ok":true,"data":{"rates":{"shared":{"per_second":0.5,"burst":2}}}}`)
+	prices, _, err = c.App.Prices(context.Background())
+	if err != nil {
+		t.Fatalf("App.Prices with a fractional rate: %v", err)
+	}
+	if prices.Rates[BillingShared].PerSecond != 0.5 || prices.AccountRate != nil {
+		t.Errorf("prices = %+v", prices)
+	}
+}
+
 func TestQuotaKeepsItsWindow(t *testing.T) {
 	c, _, _ := serve(t, `{"ok":true,"data":[
 		{"key":"messages:stored","label":"Archived messages","unit":"messages",
@@ -113,6 +227,179 @@ func TestSearchBodyLeavesOutWhatWasNotAsked(t *testing.T) {
 	}
 	if res.Total != 37 || res.Pages != 4 {
 		t.Errorf("result = %+v", res)
+	}
+}
+
+// Every value is text on the wire, and a mode left out is the API's eq.
+func TestConditionValueIsAlwaysText(t *testing.T) {
+	c, _, sent := serve(t, `{"ok":true,"data":{"total":412}}`)
+
+	chat := int64(-1001234567890)
+	_, _, err := c.Archive.Count(context.Background(), SearchRequest{
+		Chat:       &chat,
+		Conditions: []Condition{{Field: "deleted", Value: "true"}},
+	})
+	if err != nil {
+		t.Fatalf("Count: %v", err)
+	}
+	want := `{"chat":-1001234567890,"conditions":[{"field":"deleted","value":"true"}]}`
+	if sent() != want {
+		t.Errorf("body = %s, want %s", sent(), want)
+	}
+}
+
+// The example from the documentation, byte for byte.
+func TestSearchPageTurnsByTheQueryID(t *testing.T) {
+	c, last, sent := serve(t, `{"ok":true,"data":{
+		"messages": [
+			{"id": 90190, "message_id": 4402, "chat": -1001234567890, "sender": 1256738876,
+			 "receiver": 42, "text": "invoice for August", "deleted": false,
+			 "created_at": "2026-08-30T17:40:11Z", "versions": 1}
+		],
+		"total": 37,
+		"page": 1,
+		"pages": 4,
+		"per_page": 10,
+		"query_id": "5tQx0bYFvHh1nC2kq9Lr3w"}}`)
+
+	res, _, err := c.Archive.SearchPage(context.Background(), SearchPageRequest{
+		QueryID: "5tQx0bYFvHh1nC2kq9Lr3w",
+		Page:    1,
+	})
+	if err != nil {
+		t.Fatalf("SearchPage: %v", err)
+	}
+	if last().Method != http.MethodPost || last().URL.Path != "/v1/messages/search/page" {
+		t.Errorf("request = %s %s", last().Method, last().URL.Path)
+	}
+	if want := `{"query_id":"5tQx0bYFvHh1nC2kq9Lr3w","page":1}`; sent() != want {
+		t.Errorf("body = %s, want %s", sent(), want)
+	}
+	if res.QueryID != "5tQx0bYFvHh1nC2kq9Lr3w" || res.Page != 1 || len(res.Messages) != 1 {
+		t.Errorf("result = %+v", res)
+	}
+	if res.Messages[0].ID != 90190 || res.Messages[0].Versions != 1 {
+		t.Errorf("message = %+v", res.Messages[0])
+	}
+}
+
+// A reply carries what it answers, and the chat's names travel with it.
+func TestMessageCarriesItsReplyAndNames(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":{
+		"id": 90210, "message_id": 4471, "chat": -1001234567890, "sender": 1256738876,
+		"receiver": 42, "text": "the invoice is attached", "username": "ann",
+		"first_name": "Ann", "last_name": "Weber", "sender_username": "ann",
+		"sender_name": "Ann", "deleted": true, "deleted_at": 1757145760,
+		"media_type": "document", "file_id": "BQACAgIAAx…",
+		"created_at": "2026-09-01T09:14:02Z", "reply_to_message_id": 4470}}`)
+
+	msg, _, err := c.Archive.Message(context.Background(), 90210)
+	if err != nil {
+		t.Fatalf("Message: %v", err)
+	}
+	if msg.FirstName != "Ann" || msg.LastName != "Weber" || msg.SenderName != "Ann" {
+		t.Errorf("names = %+v", msg)
+	}
+	if !msg.Deleted || msg.DeletedAt.At().Unix() != 1757145760 {
+		t.Errorf("deletion = %v at %v", msg.Deleted, msg.DeletedAt.At())
+	}
+	if msg.ReplyToID != 0 || msg.ReplyToMessageID != 4470 {
+		t.Errorf("reply = %d / %d", msg.ReplyToID, msg.ReplyToMessageID)
+	}
+}
+
+// The example from the documentation, byte for byte.
+func TestVaultStoreReturnsTheEntryID(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":{"entry_id": 31, "recovery_codes": ["7K3QMX9TBA4F8ZRQW2NCHD6PVJ", "Q2W8ERT4YA9M3PKZX7CVBN5H1D", "H6J4K2NM8NP9Q3RS5T7VW1X0YZ", "A1B2C3D4E5F6G7H8J9KM0NPQRS"]}}`)
+
+	codes, _, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "the pale blue dot", Plaintext: "AKIA…"})
+	if err != nil {
+		t.Fatalf("Vault.Store: %v", err)
+	}
+	if codes.EntryID != 31 || len(codes.RecoveryCodes) != 4 {
+		t.Errorf("codes = %+v", codes)
+	}
+}
+
+// The new passphrase is required now, and a required field is a value sent
+// whatever it holds: refusing an empty one is the API's decision to make.
+func TestVaultRecoverAlwaysSendsTheNewPassphrase(t *testing.T) {
+	c, _, sent := serve(t, `{"ok":true,"data":{}}`)
+
+	if _, _, err := c.Vault.Recover(context.Background(), VaultRecoverRequest{Code: "7K3QM-X9TBA"}); err != nil {
+		t.Fatalf("Vault.Recover: %v", err)
+	}
+	if want := `{"code":"7K3QM-X9TBA","new_passphrase":""}`; sent() != want {
+		t.Errorf("body = %s, want %s", sent(), want)
+	}
+}
+
+// The example from the documentation, byte for byte.
+func TestActionUpdateSwitchesArgsRequired(t *testing.T) {
+	c, last, sent := serve(t, `{"ok":true,"data":{"id": 3, "name": "order", "body": "Order [[ARG1]] is ready, [[ARG2]].",
+ "min_args": 2, "args_required": true, "uses": 42}}`)
+
+	action, _, err := c.Actions.Update(context.Background(), 3, ActionUpdateRequest{
+		Body:         ptr("Order [[ARG1]] is ready, [[ARG2]]."),
+		ArgsRequired: ptr(true),
+	})
+	if err != nil {
+		t.Fatalf("Actions.Update: %v", err)
+	}
+	if last().Method != http.MethodPatch || last().URL.Path != "/v1/actions/3" {
+		t.Errorf("request = %s %s", last().Method, last().URL.Path)
+	}
+	if want := `{"body":"Order [[ARG1]] is ready, [[ARG2]].","args_required":true}`; sent() != want {
+		t.Errorf("body = %s, want %s", sent(), want)
+	}
+	if action.MinArgs != 2 || !action.ArgsRequired {
+		t.Errorf("action = %+v", action)
+	}
+}
+
+func TestPortraitCarriesThePlanSections(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":{
+		"chat_id": -1001234567890,
+		"archetype": {"key": "the_essayist", "label": "The Essayist",
+		              "description": "Long, careful sentences.", "fit": 0.81, "terms": ["draft"]},
+		"traits": [{"key": "verbosity", "name": "Verbosity", "level": "high",
+		            "note": "well above most", "score": 0.78, "z": 1.24}],
+		"activity": {"messages": 4471, "first": "2026-01-04T08:00:00Z", "last": "2026-09-06T08:00:00Z"},
+		"similar": [{"title": "Bob", "score": 0.72}],
+		"signals": [{"kind": "drift", "key": "style_shift", "text": "The style shifted.", "severity": "notice"}],
+		"confidence": {"level": "high", "score": 0.86}}}`)
+
+	p, _, err := c.Insights.Portrait(context.Background(), -1001234567890)
+	if err != nil {
+		t.Fatalf("Insights.Portrait: %v", err)
+	}
+	if p.Archetype.Description == "" || len(p.Archetype.Terms) != 1 || p.Traits[0].Note == "" {
+		t.Errorf("archetype = %+v, traits = %+v", p.Archetype, p.Traits)
+	}
+	if p.Activity.First.IsZero() || len(p.Similar) != 1 || p.Signals[0].Severity != "notice" {
+		t.Errorf("portrait = %+v", p)
+	}
+}
+
+func TestSettingsCarryTheirChoices(t *testing.T) {
+	c, _, _ := serve(t, `{"ok":true,"data":{"mode": "rotate", "ttl_seconds": 2592000, "in_chat": false,
+		"can_ttl": true, "can_in_chat": true,
+		"ttl_choices": [0, 86400, 604800, 2592000, 7776000, 15552000, 31536000]}}`)
+	r, _, err := c.Settings.Retention(context.Background())
+	if err != nil {
+		t.Fatalf("Settings.Retention: %v", err)
+	}
+	if len(r.TTLChoices) != 7 || r.TTLChoices[0] != 0 || r.TTLChoices[3] != r.TTLSeconds {
+		t.Errorf("retention = %+v", r)
+	}
+
+	c, _, _ = serve(t, `{"ok":true,"data":{"reveal_ttl_seconds": 60, "auto_deletes": true, "can_reveal_ttl": true, "reveal_ttl_choices": [15, 30, 60, 180, 300, 600, 1800]}}`)
+	v, _, err := c.Settings.Vault(context.Background())
+	if err != nil {
+		t.Fatalf("Settings.Vault: %v", err)
+	}
+	if len(v.RevealTTLChoices) != 7 || v.RevealTTLChoices[2] != v.RevealTTLSeconds {
+		t.Errorf("vault settings = %+v", v)
 	}
 }
 

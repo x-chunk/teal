@@ -17,15 +17,34 @@ type ArchiveService struct{ base }
 // Search runs one query against the archived messages and returns a page of
 // matches.
 //
-// Every call is one query and is billed as one: there is no free paging here,
-// because a page is a fresh statement against the database rather than a
-// redraw of an answer already paid for. Under shared limits it spends one of
-// the plan's daily searches; under credits the allowance is not touched at
-// all. Fields lists what a condition may name.
+// Every call is one query and is billed as one, whatever page it asks for.
+// The answer carries a QueryID, and the query's other pages are free through
+// SearchPage. Under shared limits a search spends one of the plan's daily
+// searches; under hybrid the plan pays until that allowance is spent and
+// credits pay after; under credits the allowance is not touched at all.
+// Fields lists what a condition may name.
 //
 // POST /v1/messages/search.
 func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (SearchResult, *Meta, error) {
 	return s.query[SearchResult](ctx, "v1/messages/search", req)
+}
+
+// SearchPage turns to another page of a query Search already ran, named by
+// the QueryID its answer carried: the same chat and the same conditions, at
+// the page asked for.
+//
+// It is free on every billing mode and spends no search — the query was paid
+// for by its first page — though the plan's rules on the query apply to
+// every page as they did to the first.
+//
+// A query can be paged for 30 minutes after it was run, by the application
+// that ran it, which keeps its 20 most recent. After that — or after the
+// service restarts — the answer is CodeNotFound, and the way on is to run
+// the search again.
+//
+// POST /v1/messages/search/page.
+func (s *ArchiveService) SearchPage(ctx context.Context, req SearchPageRequest) (SearchResult, *Meta, error) {
+	return s.query[SearchResult](ctx, "v1/messages/search/page", req)
 }
 
 // Count answers the same query with the number of matches and nothing else.
@@ -47,11 +66,22 @@ func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) (CountRes
 // reachable as Meta.Header.Get("X-Aether-Export-Total"), and in the
 // document's own Total field.
 //
-// The whole result is priced and charged before the first byte is written, so
+// The whole result is priced and charged before the first byte is written —
+// export:run for the export and export:message for every message in it — so
 // an application that cannot pay never starts an export. An export is capped
-// at 50 MB; a stream that hits the cap ends early and the charge for it is
-// given back. Decode it into an ExportDocument when a file is not what is
-// wanted.
+// at 50 MB, and one that would pass the cap is refused whole with
+// CodeTooLarge before a byte is sent, and nothing is charged.
+//
+// The charge becomes final when the document has gone out. One that fails on
+// the server's side after it started is refunded and the connection is
+// broken off, so reading the body fails rather than ending as if the document
+// were whole: a cut-off export never decodes as a complete one. An export the
+// caller stops reading is charged if any of it arrived. Decode it into an
+// ExportDocument when a file is not what is wanted.
+//
+// The weekly export allowance and the plan's ceiling on an export's size
+// apply under shared limits; under credits neither does, and every message is
+// paid for.
 //
 // POST /v1/messages/export.
 func (s *ArchiveService) Export(ctx context.Context, req SearchRequest) (io.ReadCloser, *Meta, error) {
@@ -77,7 +107,8 @@ func (s *ArchiveService) Message(ctx context.Context, id int64) (Message, *Meta,
 
 // Versions returns every version of a message's text, latest first. The first
 // entry is the text the message carries now; how far back the rest goes is a
-// plan limit.
+// plan limit, and a plan without the edit history refuses with
+// CodeForbidden.
 //
 // GET /v1/messages/{id}/versions.
 func (s *ArchiveService) Versions(ctx context.Context, id int64) (VersionList, *Meta, error) {

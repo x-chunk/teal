@@ -28,8 +28,8 @@ type Request struct {
 	//
 	// A write leaves it false and is never retried on a 500: the request
 	// may well have taken effect before the process failed, and a second
-	// vault entry is worse than an error. A rate refusal is retried either
-	// way, because nothing was done.
+	// vault entry is worse than an error. A rate refusal and busy are
+	// retried either way, because nothing was done.
 	Idempotent bool
 }
 

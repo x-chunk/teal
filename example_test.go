@@ -47,6 +47,56 @@ func ExampleArchiveService_Search() {
 	}
 }
 
+// A search is billed once. Its other pages are turned by the query id its
+// first page carried, for nothing, for half an hour.
+func ExampleArchiveService_SearchPage() {
+	c, err := teal.New(os.Getenv("AETHER_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ctx := context.Background()
+
+	res, _, err := c.Archive.Search(ctx, teal.SearchRequest{
+		Conditions: []teal.Condition{{Field: "text", Mode: teal.MatchContains, Value: "invoice"}},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for page := 1; page < res.Pages; page++ {
+		next, meta, err := c.Archive.SearchPage(ctx, teal.SearchPageRequest{QueryID: res.QueryID, Page: page})
+		if teal.IsCode(err, teal.CodeNotFound) {
+			// Forgotten: past its half hour, or the service restarted.
+			break
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("page %d: %d messages, cost %s\n", next.Page, len(next.Messages), meta.Cost)
+	}
+}
+
+// What reaches past reading is opened to a key by its owner in the bot, and
+// a refusal names the scope that would open it.
+func ExampleError_scope() {
+	c, err := teal.New(os.Getenv("AETHER_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, _, err = c.Vault.Store(context.Background(), teal.VaultStoreRequest{
+		Passphrase: "the pale blue dot",
+		Plaintext:  "AKIA…",
+	})
+	if e, ok := teal.AsError(err); ok && e.Code == teal.CodeScopeRequired {
+		fmt.Printf("open %s to this key on the application's screen in the bot\n", e.Scope)
+		return
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // A quota that is spent turns only when its window does, so a client waits
 // rather than retries. The transport already retries what is worth retrying.
 func ExampleIsCode() {

@@ -18,8 +18,9 @@ func (s *ActionsService) List(ctx context.Context) (ActionList, *Meta, error) {
 //
 // A body using a placeholder the plan does not open is refused here rather
 // than surprising somebody mid-conversation — Placeholders says which are
-// open. Under credits and hybrid a shortcut beyond the plan's ceiling is
-// charged once, as actions:entry, when it is created.
+// open. So is a body longer than 900 UTF-16 code units, or one carrying a
+// NUL, with CodeBadRequest. Under credits and hybrid a shortcut beyond the
+// plan's ceiling is charged once, as actions:entry, when it is created.
 //
 // POST /v1/actions.
 func (s *ActionsService) Create(ctx context.Context, req ActionCreateRequest) (Action, *Meta, error) {
@@ -42,9 +43,14 @@ func (s *ActionsService) Get(ctx context.Context, id int64) (Action, *Meta, erro
 	return s.get[Action](ctx, "v1/actions/"+itoa(id), nil)
 }
 
-// Update renames a shortcut, changes what it says, or both. Only the fields
-// set are written, and the name is applied first, so a rename that collides
-// fails before the body is touched.
+// Update renames a shortcut, changes what it says, switches whether it needs
+// its arguments, or any of them at once. Only the fields set are written, and
+// all of them in one write: a request refused on one field — a rename that
+// collides, a body that is refused — changes none of them, and one that
+// succeeds changes them together, so a body and its ArgsRequired never apply
+// apart. The answer is the shortcut as it now stands.
+//
+// A request that sets nothing is refused with CodeBadRequest.
 //
 // PATCH /v1/actions/{id}.
 func (s *ActionsService) Update(ctx context.Context, id int64, req ActionUpdateRequest) (Action, *Meta, error) {

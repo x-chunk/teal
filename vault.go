@@ -15,11 +15,24 @@ import "context"
 // CodeNotFound, deliberately the same answer as one that is wrong.
 //
 // Every call here waits its turn in the vault's queue, at the class the
-// account's plan buys.
+// account's plan buys. A queue with no room answers CodeBusy before any of
+// the work began, and the transport sends the call again after RetryAfter,
+// writes included.
+//
+// Everything but Reveal writes, and a key writes to the vault only once its
+// owner has opened ScopeVaultWrite to it in the bot; until then the answer is
+// CodeScopeRequired and nothing is charged.
+//
+// Too many wrong passphrases and codes shut the vault to guesses for a while:
+// the answer is CodeRateLimited with ReasonVaultLocked and a RetryAfter for
+// when the lock runs out, and it is not retried — a guess sent the moment the
+// lock lifts is a guess that may lock it again.
 type VaultService struct{ base }
 
-// Store encrypts one secret under a passphrase and returns the one-time
-// recovery codes issued with it. The codes are readable here and never again.
+// Store encrypts one secret under a passphrase and returns the id of the new
+// entry with the one-time recovery codes issued with it. The codes are
+// readable here and never again; the id is what DeleteByID takes, and opens
+// nothing.
 //
 // Under shared limits the plan's ceiling on entries applies. Under credits
 // and hybrid an entry beyond that ceiling is charged once, as vault:entry,
@@ -39,7 +52,8 @@ func (s *VaultService) Reveal(ctx context.Context, req VaultRevealRequest) (Vaul
 
 // Rename re-wraps an entry's key under a new passphrase. The secret itself is
 // not re-encrypted and its data key does not change — only the door onto it
-// does.
+// does. Renaming is a plan feature: a plan that does not open it refuses with
+// CodeForbidden.
 //
 // POST /v1/vault/entries/rename.
 func (s *VaultService) Rename(ctx context.Context, req VaultRenameRequest) (*Meta, error) {
@@ -56,9 +70,10 @@ func (s *VaultService) ReissueCodes(ctx context.Context, req VaultCodesRequest) 
 	return s.post[RecoveryCodes](ctx, "v1/vault/entries/codes", req)
 }
 
-// Recover opens an entry with one of its one-time codes, optionally moving it
-// to a new passphrase on the way. The code is spent by this call either way,
-// and every remaining code is replaced with a fresh set.
+// Recover opens an entry with one of its one-time codes and moves it to the
+// new passphrase the request carries, which is required. The code is spent by
+// this call, every remaining code is replaced with a fresh set, and from then
+// on the entry opens with the new passphrase.
 //
 // Spending a code raises an alert to the account's owner in Telegram. It is
 // published unconditionally: nothing on this path can suppress it.
@@ -81,8 +96,8 @@ func (s *VaultService) Delete(ctx context.Context, req VaultDeleteRequest) (*Met
 	return meta, err
 }
 
-// DeleteByID destroys one entry by the id it was stored under, for a client
-// that kept it.
+// DeleteByID destroys one entry by the id Store answered with, in
+// RecoveryCodes.EntryID. Free on every billing mode, like Delete.
 //
 // DELETE /v1/vault/entries/{id}.
 func (s *VaultService) DeleteByID(ctx context.Context, id int64) (*Meta, error) {

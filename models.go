@@ -37,13 +37,15 @@ func (u Unix) At() time.Time { return time.Unix(int64(u), 0).UTC() }
 // A quota with no window — the archive's size, the vault's entries — is a
 // ceiling rather than an allowance, and carries neither Window nor ResetAt.
 type Quota struct {
-	Key       string `json:"key"`   // "search:daily", "messages:stored", …
-	Label     string `json:"label"` // written for a person
-	Unit      string `json:"unit"`  // "searches", "messages", …
-	Limit     int64  `json:"limit"`
-	Used      int64  `json:"used"`
-	Remaining int64  `json:"remaining"`
-	Unlimited bool   `json:"unlimited"`
+	Key   string `json:"key"`   // "search:daily", "messages:stored", …
+	Label string `json:"label"` // written for a person
+	Unit  string `json:"unit"`  // "searches", "messages", …
+	// Limit and Remaining arrive as null on an unlimited quota and are zero
+	// here: read Unlimited before either of them.
+	Limit     int64 `json:"limit"`
+	Used      int64 `json:"used"`
+	Remaining int64 `json:"remaining"`
+	Unlimited bool  `json:"unlimited"`
 
 	Window  string    `json:"window"`   // "day", "week"; empty on a ceiling
 	ResetAt time.Time `json:"reset_at"` // when the window turns
@@ -63,7 +65,7 @@ type Application struct {
 	Funded      Money       `json:"funded"`
 	Spent       Money       `json:"spent"`
 	Requests    int64       `json:"requests"`
-	LastUsedAt  time.Time   `json:"last_used_at"`
+	LastUsedAt  time.Time   `json:"last_used_at"` // zero for a key never used
 	Disabled    bool        `json:"disabled"`
 	CreatedAt   time.Time   `json:"created_at"`
 	AccountID   int64       `json:"account_id"`
@@ -99,26 +101,25 @@ type Usage struct {
 	To   string `json:"to"`
 	// Calls counts operations billed, not requests served: one export bills
 	// two operations and is one request.
-	Calls   int64      `json:"calls"`
-	Credits Money      `json:"credits"`
-	Ops     []UsageOp  `json:"ops"`
-	Days    []UsageDay `json:"days"` // only with UsageRequest.ByDay
+	Calls   int64     `json:"calls"`
+	Credits Money     `json:"credits"`
+	Ops     []UsageOp `json:"ops"`
+	// Days is the same totals broken down by day and by operation, one row
+	// for each operation on each day, newest first. Only with
+	// UsageRequest.ByDay; every row carries its Day.
+	Days []UsageOp `json:"days"`
 }
 
-// UsageOp is one priced operation's share of the spending.
+// UsageOp is one priced operation's share of the spending — over the whole
+// window in Usage.Ops, or over one day in Usage.Days.
 type UsageOp struct {
 	Op      string `json:"op"` // "search:query", "messages:read", …
 	Calls   int64  `json:"calls"`
 	Units   int64  `json:"units"`
 	Credits Money  `json:"credits"`
-}
-
-// UsageDay is one day of the breakdown UsageRequest.ByDay asks for.
-type UsageDay struct {
-	Day     string    `json:"day"`
-	Calls   int64     `json:"calls"`
-	Credits Money     `json:"credits"`
-	Ops     []UsageOp `json:"ops"`
+	// Day is the UTC date the row is counted under, "2026-09-06". It is set
+	// on the rows of Usage.Days and empty on the totals.
+	Day string `json:"day"`
 }
 
 // Account is the account a key opens: the plan behind it, what that plan
@@ -130,15 +131,22 @@ type Account struct {
 	// key. Moving it onto an application is a bot screen.
 	BalanceCents int64   `json:"balance_cents"`
 	Quotas       []Quota `json:"quotas"`
+	// MeasuredAt is when the report was measured. The API measures it at
+	// most once every ten seconds per account, so polling it faster reads
+	// the same numbers back — Quotas included.
+	MeasuredAt Unix `json:"measured_at"`
 }
 
 // Plan is the subscription behind an account.
 type Plan struct {
-	Tier        string    `json:"tier"` // "ultra", …
-	Name        string    `json:"name"`
-	PriceCents  int64     `json:"price_cents"`
-	Until       time.Time `json:"until"`
-	Permissions []string  `json:"permissions"`
+	Tier       string `json:"tier"` // "max", …
+	Name       string `json:"name"`
+	PriceCents int64  `json:"price_cents"`
+	// Until is when the subscription lapses, zero for one that does not.
+	Until time.Time `json:"until"`
+	// Permissions are the features the plan opens, by their stable keys —
+	// the same keys a forbidden Error names in its Permission.
+	Permissions []string `json:"permissions"`
 }
 
 // Prices is the price list and the rate ceilings in force on a deployment,
@@ -149,10 +157,24 @@ type Prices struct {
 	CreditsPerCent int64 `json:"credits_per_cent"`
 	// Rates is the shield's ceiling for each billing mode.
 	Rates map[BillingMode]Rate `json:"rates"`
+	// AccountRate is the ceiling every application of one account shares,
+	// whatever their modes, and GlobalRate the one every application of
+	// every account shares. Either is nil when it is off on this deployment.
+	AccountRate *Rate `json:"account_rate"`
+	GlobalRate  *Rate `json:"global_rate"`
 	// QuotaTTLSeconds is how long a process keeps a plan's quotas in memory
 	// before reading them again.
 	QuotaTTLSeconds int `json:"quota_ttl_seconds"`
 }
+
+// When an operation's price is paid out of the application's balance.
+const (
+	// ChargingAlways is paid on every call, under credits and hybrid alike.
+	ChargingAlways = "always"
+	// ChargingOverflow is paid only past what the plan covers: a vault
+	// entry or a shortcut beyond the plan's ceiling, say.
+	ChargingOverflow = "overflow"
+)
 
 // Price is what one operation costs.
 type Price struct {
@@ -162,15 +184,16 @@ type Price struct {
 	Price Money  `json:"price"`
 	// Limit names the quota this operation stands in for, if any.
 	Limit string `json:"limit"`
-	// Charging is when the balance pays: "always", "past the plan", "never".
+	// Charging is ChargingAlways or ChargingOverflow.
 	Charging    string `json:"charging"`
 	Description string `json:"description"`
 }
 
-// Rate is a requests-per-second ceiling and the burst allowed above it.
+// Rate is a requests-per-second ceiling and the burst allowed above it. The
+// ceiling need not be a whole number.
 type Rate struct {
-	PerSecond int `json:"per_second"`
-	Burst     int `json:"burst"`
+	PerSecond float64 `json:"per_second"`
+	Burst     int     `json:"burst"`
 }
 
 // --- Archive ----------------------------------------------------------------
@@ -196,13 +219,19 @@ type Condition struct {
 	// there never reaches the database.
 	Field string `json:"field"`
 	// Mode is MatchContains or MatchEquals, whichever the field accepts.
-	Mode string `json:"mode"`
+	// Empty is MatchEquals.
+	Mode string `json:"mode,omitempty"`
 	// Conn is ConnAnd or ConnOr, and joins this condition to the one before.
-	// It is ignored on the first.
+	// It is ignored on the first, and empty is ConnAnd. Joining with ConnOr
+	// is a plan limit.
 	Conn string `json:"conn,omitempty"`
-	// Value is what to match: a string, a number or a date, as the field's
-	// kind requires.
-	Value any `json:"value"`
+	// Value is what to match, always written as text and parsed into the
+	// field's kind: "42" for a number, "true" for a bool, "2026-09-01" for a
+	// time. It is matched exactly as sent, spaces included. A date matches a
+	// whole day — a plain date is that day in UTC, and a timestamp with an
+	// offset, "2026-09-01T00:30:00+05:00", is that calendar day in its own
+	// zone.
+	Value string `json:"value"`
 }
 
 // SearchRequest is one query against the archive. The same body is taken by
@@ -212,18 +241,35 @@ type SearchRequest struct {
 	Chat *int64 `json:"chat,omitempty"`
 	// Conditions are the filters, combined in order.
 	Conditions []Condition `json:"conditions,omitempty"`
-	// Page is which page of the answer to return, from zero. Paging is not
-	// free: every call is one query and is billed as one.
+	// Page is which page of the answer Search returns, from zero; Count and
+	// Export ignore it. Every Search is billed as one query whatever page it
+	// asks for, so the other pages are better turned with SearchPage, which
+	// is free.
 	Page int `json:"page,omitempty"`
 }
 
 // SearchResult is one page of matches.
+//
+// The total and the page always describe the same moment, but the page
+// number is a live position: a message archived between two requests shifts
+// the pages after it.
 type SearchResult struct {
 	Messages []Message `json:"messages"`
 	Total    int64     `json:"total"`
 	Page     int       `json:"page"`
 	Pages    int       `json:"pages"`
 	PerPage  int       `json:"per_page"`
+	// QueryID names the query for SearchPage, which turns its other pages for
+	// nothing for 30 minutes after it was run.
+	QueryID string `json:"query_id"`
+}
+
+// SearchPageRequest turns to another page of a query already run.
+type SearchPageRequest struct {
+	// QueryID is what the query's first page carried in SearchResult.QueryID.
+	QueryID string `json:"query_id"`
+	// Page is which page of matches to return, from zero.
+	Page int `json:"page"`
 }
 
 // CountResult is the number of matches behind a query, and nothing else.
@@ -231,26 +277,45 @@ type CountResult struct {
 	Total int64 `json:"total"`
 }
 
-// Message is one archived message.
+// Message is one archived message, in the same shape whether it comes from a
+// search, a read by id or an export.
 //
 // ID is the archive's own id — the one to read a message back by. MessageID
 // is Telegram's, which is only unique inside a chat.
 type Message struct {
-	ID             int64  `json:"id"`
-	MessageID      int64  `json:"message_id"`
-	Chat           int64  `json:"chat"`
-	Sender         int64  `json:"sender"`
-	Receiver       int64  `json:"receiver"`
+	ID        int64  `json:"id"`
+	MessageID int64  `json:"message_id"`
+	Chat      int64  `json:"chat"`
+	Sender    int64  `json:"sender"`
+	Receiver  int64  `json:"receiver"`
+	Text      string `json:"text"`
+	// Username, FirstName and LastName are the chat's, as Telegram reported
+	// them when the message was archived.
+	Username  string `json:"username"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	// SenderUsername and SenderName are the sender's.
 	SenderUsername string `json:"sender_username"`
-	Text           string `json:"text"`
-	MediaType      string `json:"media_type"`
+	SenderName     string `json:"sender_name"`
+	// Deleted marks a message deleted inside Telegram, and DeletedAt says
+	// when. The archive keeps it either way.
+	Deleted   bool   `json:"deleted"`
+	DeletedAt Unix   `json:"deleted_at"`
+	MediaType string `json:"media_type"`
 	// FileID is only returned when the plan opens the media viewer. Without
 	// it the message comes back with everything else and no file id.
 	FileID    string    `json:"file_id"`
-	Deleted   bool      `json:"deleted"`
 	CreatedAt time.Time `json:"created_at"`
-	// Versions is how many texts this message has had, on a search result.
+	// Versions is how many superseded texts the message has, on a search
+	// result: zero says asking Versions for its history is not worth a
+	// request.
 	Versions int `json:"versions"`
+	// ReplyToID is the archived message this one answers, readable by the
+	// same id as any other. ReplyToMessageID is Telegram's id of it, and is
+	// set on its own when the answered message is not in the archive. Both
+	// are zero on a message that answers nothing.
+	ReplyToID        int64 `json:"reply_to_id"`
+	ReplyToMessageID int64 `json:"reply_to_message_id"`
 }
 
 // ChatsRequest pages through the conversations in the archive.
@@ -297,19 +362,22 @@ type MessageVersion struct {
 // Field is a column a Condition may name, and the modes it accepts.
 type Field struct {
 	Key   string   `json:"key"`
-	Kind  string   `json:"kind"` // "string", "int64", "time"
+	Kind  string   `json:"kind"` // "string", "int", "int64", "bool", "time"
 	Modes []string `json:"modes"`
 }
 
 // ExportDocument is what Export streams, for a caller that would rather
-// decode it than write it to a file.
+// decode it than write it to a file. It is the archive as it stood when the
+// export began, and Total is exactly the number of messages it holds.
 type ExportDocument struct {
 	AccountID  int64     `json:"account_id"`
 	ExportedAt time.Time `json:"exported_at"`
 	Total      int64     `json:"total"`
 	Filters    int       `json:"filters"`
-	Chat       int64     `json:"chat"`
-	Messages   []Message `json:"messages"`
+	// Chat is the conversation the export was narrowed to, zero when it
+	// covers all of them.
+	Chat     int64     `json:"chat"`
+	Messages []Message `json:"messages"`
 }
 
 // --- Vault ------------------------------------------------------------------
@@ -341,9 +409,14 @@ type VaultCodesRequest struct {
 
 // VaultRecoverRequest opens an entry with one of its one-time codes.
 type VaultRecoverRequest struct {
+	// Code is spent by the call. It is read the way a person retypes it:
+	// with or without dashes, in either case.
 	Code string `json:"code"`
-	// NewPassphrase moves the entry on the way, when it is not empty.
-	NewPassphrase string `json:"new_passphrase,omitempty"`
+	// NewPassphrase is the passphrase the entry moves to, and is required:
+	// the fresh codes exist only in the answer, and an entry its caller can
+	// still open with a passphrase of its own choosing is not lost with
+	// them if the answer never arrives.
+	NewPassphrase string `json:"new_passphrase"`
 }
 
 // VaultDeleteRequest destroys the entry a passphrase addresses.
@@ -355,6 +428,9 @@ type VaultDeleteRequest struct {
 // readable when they are issued and never again: a client that drops them has
 // dropped them for good.
 type RecoveryCodes struct {
+	// EntryID is the id of the entry Store wrote — what DeleteByID takes. It
+	// addresses the entry and opens nothing. ReissueCodes leaves it zero.
+	EntryID       int64    `json:"entry_id"`
 	RecoveryCodes []string `json:"recovery_codes"`
 }
 
@@ -364,11 +440,11 @@ type VaultSecret struct {
 }
 
 // VaultRecovered is a decrypted entry, opened with a recovery code. The code
-// is spent by the call either way, and every remaining code is replaced with
-// the fresh set here.
+// is spent by the call, and every remaining code is replaced with the fresh
+// set here — the only set that works from now on.
 type VaultRecovered struct {
 	Plaintext string `json:"plaintext"`
-	// Rekeyed says whether the entry was moved to a new passphrase.
+	// Rekeyed says whether the entry was moved to the new passphrase.
 	Rekeyed       bool     `json:"rekeyed"`
 	RecoveryCodes []string `json:"recovery_codes"`
 	// Revoked is how many of the old codes were thrown away.
@@ -383,23 +459,42 @@ type ActionCreateRequest struct {
 	Name string `json:"name"`
 	// Body is what the bot writes in its place, placeholders and all. A body
 	// using a placeholder the plan does not open is refused rather than
-	// rendering as nothing later.
+	// rendering as nothing later. It is at most 900 UTF-16 code units — a
+	// letter of any alphabet is one, an emoji two — so it always fits a
+	// caption.
 	Body string `json:"body"`
 }
 
-// ActionUpdateRequest renames a shortcut, changes what it says, or both.
-// Only the fields set are written, and the name is applied first, so a rename
-// that collides fails before the body is touched.
+// ActionUpdateRequest changes a shortcut. Only the fields set are written,
+// and all of them in one write: a request refused on one field — a rename
+// that collides, a body that is refused — changes none of them.
 type ActionUpdateRequest struct {
 	Name *string `json:"name,omitempty"`
 	Body *string `json:"body,omitempty"`
+	// ArgsRequired says whether the shortcut fires when it is called with
+	// fewer words than its body reads. Off, the missing arguments render as
+	// empty; on, nothing fires and the message is sent exactly as typed. A
+	// request that only switches it is accepted on every plan.
+	ArgsRequired *bool `json:"args_required,omitempty"`
 }
 
 // Action is one shortcut.
 type Action struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	Body      string    `json:"body"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Body string `json:"body"`
+	// MediaType and FileID are the attachment the shortcut sends with its
+	// body, empty when it sends none.
+	MediaType string `json:"media_type"`
+	FileID    string `json:"file_id"`
+	// MinArgs is how many words typed after the shortcut its body reads,
+	// through [[ARG1]] … [[ARG9]] and [[ARGS]]. It is derived from the body
+	// and read-only; ArgsRequired is whether a call short of them fires.
+	MinArgs      int  `json:"min_args"`
+	ArgsRequired bool `json:"args_required"`
+	// Uses counts the calls that matched the shortcut, counted before the
+	// message was rendered and sent — one that rendered to nothing or that
+	// Telegram refused among them. UsedAt is the latest, zero when none.
 	Uses      int64     `json:"uses"`
 	UsedAt    Unix      `json:"used_at"`
 	CreatedAt time.Time `json:"created_at"`
@@ -420,7 +515,7 @@ type ActionList struct {
 type Placeholder struct {
 	Token   string `json:"token"` // "[[YOU_FIRST]]"
 	Label   string `json:"label"`
-	Level   string `json:"level"` // "basic", "exclusive", …
+	Level   string `json:"level"` // "basic", "advanced" or "exclusive"
 	Allowed bool   `json:"allowed"`
 	// RequiredPlan names the tier that would open it, when it is not open.
 	RequiredPlan string `json:"required_plan"`
@@ -436,8 +531,8 @@ type Insights struct {
 
 // Portrait describes the person on the other side of one conversation.
 //
-// Whether the similar-chats and style-shift sections are present depends on
-// the plan.
+// Whether the similar-chats and style-shift sections — Similar and Signals —
+// are present depends on the plan.
 type Portrait struct {
 	ChatID  int64           `json:"chat_id"`
 	Subject PortraitSubject `json:"subject"`
@@ -452,6 +547,11 @@ type Portrait struct {
 	Topics    []string          `json:"topics"`
 	Rhythm    PortraitRhythm    `json:"rhythm"`
 	Activity  PortraitActivity  `json:"activity"`
+	// Similar are the account's other conversations that sound like this
+	// one, and Signals what is worth knowing about the analysis — a style
+	// that shifted, say.
+	Similar []PortraitSimilar `json:"similar"`
+	Signals []PortraitSignal  `json:"signals"`
 	// Confidence is how much of the portrait the conversation supports.
 	Confidence PortraitConfidence `json:"confidence"`
 }
@@ -465,6 +565,22 @@ type PortraitSubject struct {
 	Last     time.Time `json:"last"`
 }
 
+// PortraitSimilar is one conversation that sounds like the one portrayed.
+type PortraitSimilar struct {
+	Title string  `json:"title"`
+	Score float64 `json:"score"`
+}
+
+// PortraitSignal is one thing worth telling about a portrait's analysis.
+type PortraitSignal struct {
+	Kind string `json:"kind"`
+	// Key identifies the sentence in Text, for a client that would rather
+	// write the same finding in a language of its own.
+	Key      string `json:"key"`
+	Text     string `json:"text"`
+	Severity string `json:"severity"` // "info", "notice" or "warning"
+}
+
 // PortraitModel is the fitted model a portrait came out of.
 type PortraitModel struct {
 	Version  int       `json:"version"`
@@ -473,9 +589,12 @@ type PortraitModel struct {
 
 // PortraitArchetype is the archetype a subject falls into, and how well.
 type PortraitArchetype struct {
-	Key   string  `json:"key"` // "the_essayist", …
-	Label string  `json:"label"`
-	Fit   float64 `json:"fit"`
+	Key         string  `json:"key"` // "the_essayist", …
+	Label       string  `json:"label"`
+	Description string  `json:"description"`
+	Fit         float64 `json:"fit"`
+	// Terms are the terms typical of the archetype — not of this subject.
+	Terms []string `json:"terms"`
 }
 
 // PortraitTrait is one stylometric trait behind an archetype. Z is how far
@@ -484,6 +603,7 @@ type PortraitTrait struct {
 	Key   string  `json:"key"`
 	Name  string  `json:"name"`
 	Level string  `json:"level"` // "high", "low", …
+	Note  string  `json:"note"`
 	Score float64 `json:"score"`
 	Z     float64 `json:"z"`
 }
@@ -499,13 +619,15 @@ type PortraitRhythm struct {
 	WeekendShare   float64 `json:"weekend_share"`
 }
 
-// PortraitActivity is how much a subject writes.
+// PortraitActivity is how much a subject writes, and over what span.
 type PortraitActivity struct {
-	Messages       int64   `json:"messages"`
-	Words          int64   `json:"words"`
-	UniqueTerms    int64   `json:"unique_terms"`
-	MessagesPerDay float64 `json:"messages_per_day"`
-	MediaShare     float64 `json:"media_share"`
+	Messages       int64     `json:"messages"`
+	Words          int64     `json:"words"`
+	UniqueTerms    int64     `json:"unique_terms"`
+	First          time.Time `json:"first"`
+	Last           time.Time `json:"last"`
+	MessagesPerDay float64   `json:"messages_per_day"`
+	MediaShare     float64   `json:"media_share"`
 }
 
 // PortraitConfidence is how far a portrait can be trusted.
@@ -535,15 +657,19 @@ type Retention struct {
 	InChat bool `json:"in_chat"`
 	// CanTTL and CanInChat say whether the plan opens those two settings. A
 	// plan that does not refuses the change rather than storing it quietly.
-	CanTTL    bool  `json:"can_ttl"`
-	CanInChat bool  `json:"can_in_chat"`
-	Archive   Quota `json:"archive"`
+	CanTTL    bool `json:"can_ttl"`
+	CanInChat bool `json:"can_in_chat"`
+	// TTLChoices are the windows TTLSeconds may be set to, zero — keep for
+	// good — among them. It is a closed set: any other number is refused.
+	TTLChoices []int64 `json:"ttl_choices"`
+	Archive    Quota   `json:"archive"`
 }
 
 // RetentionUpdateRequest changes the retention policy. Every field is
 // optional, and only the ones set are written — which is why they are
 // pointers: zero is a meaningful value for TTLSeconds, where it turns the
-// window off.
+// window off. The fields sent are applied together: a request refused on
+// one of them changes none.
 type RetentionUpdateRequest struct {
 	Mode       *string `json:"mode,omitempty"`
 	TTLSeconds *int64  `json:"ttl_seconds,omitempty"`
@@ -552,16 +678,22 @@ type RetentionUpdateRequest struct {
 
 // VaultSettings is how long a decrypted secret stays on screen.
 type VaultSettings struct {
+	// RevealTTLSeconds is how long a decrypted message stays in the chat,
+	// zero when it is not taken back at all.
 	RevealTTLSeconds int  `json:"reveal_ttl_seconds"`
 	AutoDeletes      bool `json:"auto_deletes"`
 	CanRevealTTL     bool `json:"can_reveal_ttl"`
+	// RevealTTLChoices are the windows RevealTTLSeconds may be set to besides
+	// zero. It is a closed set: any other number is refused.
+	RevealTTLChoices []int `json:"reveal_ttl_choices"`
 }
 
 // VaultSettingsUpdateRequest sets how long a decrypted vault message stays in
 // the Telegram chat before the bot takes it back.
 type VaultSettingsUpdateRequest struct {
-	// RevealTTLSeconds is the timer. Zero means the plan's own default, so
-	// the field is always sent.
+	// RevealTTLSeconds is the timer: one of VaultSettings.RevealTTLChoices,
+	// or zero for the default of 60 seconds. The API requires the field, so
+	// it is always sent.
 	RevealTTLSeconds int `json:"reveal_ttl_seconds"`
 }
 
@@ -596,6 +728,7 @@ type Language struct {
 // in.
 type LanguageUpdateRequest struct {
 	// Language is a code from Language.Supported. An empty string goes back
-	// to following the Telegram client, so the field is always sent.
+	// to following the Telegram client. The API refuses a body without the
+	// field, so it is always sent.
 	Language string `json:"language"`
 }

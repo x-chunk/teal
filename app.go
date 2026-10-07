@@ -20,7 +20,8 @@ func (s *AppService) Get(ctx context.Context) (Application, *Meta, error) {
 
 // Usage returns what this application has spent over a window, folded into
 // one row per priced operation. A nil request leaves the API's defaults: the
-// last 30 days, without the day-by-day breakdown.
+// last 30 days, without the day-by-day breakdown. A request that ended in an
+// error is not counted: it was refunded, and taken off the calls with it.
 //
 // GET /v1/usage.
 func (s *AppService) Usage(ctx context.Context, req *UsageRequest) (Usage, *Meta, error) {
@@ -31,6 +32,9 @@ func (s *AppService) Usage(ctx context.Context, req *UsageRequest) (Usage, *Meta
 // opens, when it lapses, the account's own balance and every quota measured
 // against what has been used of it.
 //
+// The report is measured at most once every ten seconds per account, and
+// Account.MeasuredAt says when: polling it faster reads the same numbers.
+//
 // GET /v1/account.
 func (s *AppService) Account(ctx context.Context) (Account, *Meta, error) {
 	return s.get[Account](ctx, "v1/account", nil)
@@ -39,7 +43,8 @@ func (s *AppService) Account(ctx context.Context) (Account, *Meta, error) {
 // Quotas returns the quotas of Account on their own, for a client that polls
 // them. Under shared limits they say how much room is left before a call is
 // refused; under hybrid, how much room is left before calls start costing
-// credits.
+// credits. They are read from the same reading as Account, at most ten
+// seconds old.
 //
 // GET /v1/quotas.
 func (s *AppService) Quotas(ctx context.Context) ([]Quota, *Meta, error) {
@@ -47,8 +52,9 @@ func (s *AppService) Quotas(ctx context.Context) ([]Quota, *Meta, error) {
 }
 
 // Prices returns what every operation costs, what one cent of account balance
-// buys, and the rates the shield enforces. It is read from the running
-// configuration, so it is what is actually in force on this deployment.
+// buys, and the rates the shield enforces — per billing mode, per account and
+// across the deployment. It is read from the running configuration, so it is
+// what is actually in force on this deployment.
 //
 // GET /v1/prices.
 func (s *AppService) Prices(ctx context.Context) (Prices, *Meta, error) {

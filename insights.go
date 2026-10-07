@@ -9,6 +9,10 @@ type InsightsService struct{ base }
 // holds — how much of it there is, what is unusual in it, and what is about
 // to run out.
 //
+// The insights are built on workers the bot shares with the API, one answer
+// at a time. A request that cannot get its turn within two seconds is
+// answered CodeBusy with a RetryAfter, and the transport asks again.
+//
 // GET /v1/insights.
 func (s *InsightsService) Get(ctx context.Context) (Insights, *Meta, error) {
 	return s.get[Insights](ctx, "v1/insights", nil)
@@ -16,12 +20,19 @@ func (s *InsightsService) Get(ctx context.Context) (Insights, *Meta, error) {
 
 // Portrait reads a whole conversation and describes the person on the other
 // side of it: the archetype they fall into, the stylometric traits behind
-// that, what they write about and when.
+// that, what they write about, when, and which of the account's other
+// conversations sound like it.
 //
-// A portrait that has not been built yet answers CodeNotFound with a
-// Retry-After — the model fits in the background, and nothing is charged for
-// an answer that was not given. Treat that as "ask again in
-// Meta.RetryAfter", not as a chat that has none.
+// A portrait that cannot be returned says why in Error.Reason, and nothing is
+// charged for an answer that was not given:
+//
+//   - ReasonModelTraining, under CodeUnavailable: the model is still being
+//     fitted. Ask again after Error.RetryAfter; the transport does not wait
+//     that long on its own.
+//   - ReasonNotEnoughHistory or ReasonEmptyChat, under CodeNotFound: the
+//     chat has to grow first.
+//   - ReasonPortraitsDisabled, under CodeUnavailable: portraits are switched
+//     off on this deployment, and waiting does not help.
 //
 // Under shared limits and hybrid, a chat already portrayed this week is free
 // to ask for again: the plan counts chats, not requests. Under credits every
