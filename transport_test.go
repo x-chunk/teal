@@ -35,14 +35,15 @@ func TestDoDecodesEnvelopeAndCostHeaders(t *testing.T) {
 	type count struct {
 		Total int `json:"total"`
 	}
-	out, meta, err := c.Do[count](context.Background(), Request{
+	res, err := c.Do[count](context.Background(), Request{
 		Method: http.MethodPost,
 		Path:   "v1/messages/count",
 		Body:   map[string]any{"conditions": []any{}},
-	})
+	}).Value()
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
+	out, meta := res.Data, res.Meta
 
 	if want := "/v1/messages/count"; got.URL.Path != want {
 		t.Errorf("path = %q, want %q", got.URL.Path, want)
@@ -71,7 +72,7 @@ func TestRefusalBecomesError(t *testing.T) {
 			"limit":"search:daily","used":2000,"limit_value":2000,"reset_at":1757203200}}`)
 	})
 
-	_, _, err := c.Do[none](context.Background(), Request{Method: http.MethodGet, Path: "v1/app"})
+	err := c.Do[none](context.Background(), Request{Method: http.MethodGet, Path: "v1/app"}).Error()
 	if !IsCode(err, CodeQuotaExhausted) {
 		t.Fatalf("err = %v, want quota_exhausted", err)
 	}
@@ -79,6 +80,10 @@ func TestRefusalBecomesError(t *testing.T) {
 	e, _ := AsError(err)
 	if e.Limit != "search:daily" || e.Used != 2000 {
 		t.Errorf("error = %+v", e)
+	}
+	// A refusal's Result holds no Response, so its Meta travels on the error.
+	if e.Meta == nil || e.Meta.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("meta = %+v", e.Meta)
 	}
 	if want := time.Unix(1757203200, 0).UTC(); !e.ResetAt.Equal(want) {
 		t.Errorf("reset_at = %v, want %v", e.ResetAt, want)

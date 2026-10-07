@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.xchunk.org/anvil/v2/result"
 )
 
 // Request is one call to the API, before it becomes an *http.Request.
@@ -33,20 +35,47 @@ type Request struct {
 	Idempotent bool
 }
 
-// Do sends req and decodes the envelope's data field into a T.
+// Response is a successful answer: its payload, and the Meta it came with.
 //
-// The *Meta is nil only when the request never reached the API — a transport
-// failure, or a body that would not marshal. Every answer, refusal included,
-// carries one.
+// Every method answers with a result.Result of one. A refusal holds an *Error
+// instead, which carries the Meta of the refused request in Error.Meta: the
+// API refunds before it answers, so the balance in it is the balance actually
+// left.
+type Response[T any] struct {
+	Data T
+	Meta *Meta
+}
+
+// wrap is the one place the (payload, meta, error) the private layer speaks
+// becomes the Result the public API answers with.
+//
+// The meta of a failure is dropped here and not lost: a refusal carries its
+// own in Error.Meta, and a request that never reached the API has none. Only
+// a successful answer that could not be read or decoded leaves without it.
+func wrap[T any](data T, meta *Meta, err error) result.Result[Response[T]] {
+	if err != nil {
+		return result.Err[Response[T]](err)
+	}
+	return result.Ok(Response[T]{Data: data, Meta: meta})
+}
+
+// Do sends req and decodes the envelope's data field into a T.
 //
 // T is in the result and not in the arguments, so it is always given
 // explicitly:
 //
-//	app, meta, err := c.Do[Application](ctx, Request{Method: http.MethodGet, Path: "v1/app"})
+//	app, err := c.Do[Application](ctx, Request{Method: http.MethodGet, Path: "v1/app"}).Value()
 //
 // Services reach for the get/post/patch/del helpers on base instead, which
 // are this with the boilerplate folded away.
-func (c *Client) Do[T any](ctx context.Context, req Request) (T, *Meta, error) {
+func (c *Client) Do[T any](ctx context.Context, req Request) result.Result[Response[T]] {
+	return wrap(c.do[T](ctx, req))
+}
+
+// do is Do as the private layer speaks it. The *Meta is nil only when the
+// request never reached the API — a transport failure, or a body that would
+// not marshal. Every answer, refusal included, carries one.
+func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 	var out T
 	resp, meta, err := c.send(ctx, req)
 	if err != nil {
@@ -83,8 +112,13 @@ func (c *Client) Do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 
 // DoRaw sends req and hands back the undecoded body, for the one endpoint
 // that answers with a document instead of the envelope — the export. The
-// caller closes it.
-func (c *Client) DoRaw(ctx context.Context, req Request) (io.ReadCloser, *Meta, error) {
+// caller closes Response.Data.
+func (c *Client) DoRaw(ctx context.Context, req Request) result.Result[Response[io.ReadCloser]] {
+	return wrap(c.doRaw(ctx, req))
+}
+
+// doRaw is DoRaw as the private layer speaks it.
+func (c *Client) doRaw(ctx context.Context, req Request) (io.ReadCloser, *Meta, error) {
 	resp, meta, err := c.send(ctx, req)
 	if err != nil {
 		return nil, meta, err
@@ -217,7 +251,8 @@ func (c Credits) String() string { return "$" + strconv.FormatFloat(c.Dollars(),
 // call is refused: the API refunds before it answers, so the balance here is
 // the balance actually left.
 //
-// A method returns a nil *Meta only when the request never reached the API.
+// Response.Meta is never nil, and neither is the Meta of an *Error: a request
+// that never reached the API fails with a plain error and has no Meta at all.
 type Meta struct {
 	StatusCode int
 
