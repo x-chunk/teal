@@ -1,3 +1,3 @@
-module github.com/x-chunk/teal
+module go.xchunk.org/teal
 
 go 1.27

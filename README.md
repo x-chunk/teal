@@ -18,8 +18,11 @@ A self-hosted deployment is one option away: `teal.WithBaseURL("https://your-hos
 ## Install
 
 ```sh
-go get github.com/x-chunk/teal
+go get go.xchunk.org/teal
 ```
+
+Up to v0.2.0 the module was `github.com/x-chunk/teal`. From v0.3.0 it is
+`go.xchunk.org/teal`: change the import path, nothing else.
 
 ## Layout
 

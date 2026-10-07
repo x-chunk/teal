@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/x-chunk/teal"
+	"go.xchunk.org/teal"
 )
 
 func ExampleNew() {
