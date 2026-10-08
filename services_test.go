@@ -322,10 +322,11 @@ func TestMessageCarriesItsReplyAndNames(t *testing.T) {
 func TestVaultStoreReturnsTheEntryID(t *testing.T) {
 	c, _, _ := serve(t, `{"ok":true,"data":{"entry_id": 31, "recovery_codes": ["7K3QMX9TBA4F8ZRQW2NCHD6PVJ", "Q2W8ERT4YA9M3PKZX7CVBN5H1D", "H6J4K2NM8NP9Q3RS5T7VW1X0YZ", "A1B2C3D4E5F6G7H8J9KM0NPQRS"]}}`)
 
-	codes, _, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "the pale blue dot", Plaintext: "AKIA…"})
+	resp, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "the pale blue dot", Plaintext: "AKIA…"}).Value()
 	if err != nil {
 		t.Fatalf("Vault.Store: %v", err)
 	}
+	codes := resp.Data
 	if codes.EntryID != 31 || len(codes.RecoveryCodes) != 4 {
 		t.Errorf("codes = %+v", codes)
 	}
@@ -336,7 +337,7 @@ func TestVaultStoreReturnsTheEntryID(t *testing.T) {
 func TestVaultRecoverAlwaysSendsTheNewPassphrase(t *testing.T) {
 	c, _, sent := serve(t, `{"ok":true,"data":{}}`)
 
-	if _, _, err := c.Vault.Recover(context.Background(), VaultRecoverRequest{Code: "7K3QM-X9TBA"}); err != nil {
+	if err := c.Vault.Recover(context.Background(), VaultRecoverRequest{Code: "7K3QM-X9TBA"}).Error(); err != nil {
 		t.Fatalf("Vault.Recover: %v", err)
 	}
 	if want := `{"code":"7K3QM-X9TBA","new_passphrase":""}`; sent() != want {
@@ -463,10 +464,11 @@ func TestPathIDAndQuery(t *testing.T) {
 func TestVaultDeleteCarriesThePassphraseInTheBody(t *testing.T) {
 	c, last, sent := serve(t, `{"ok":true,"data":{}}`)
 
-	meta, err := c.Vault.Delete(context.Background(), VaultDeleteRequest{Passphrase: "the pale blue dot"})
+	resp, err := c.Vault.Delete(context.Background(), VaultDeleteRequest{Passphrase: "the pale blue dot"}).Value()
 	if err != nil {
 		t.Fatalf("Vault.Delete: %v", err)
 	}
+	meta := resp.Meta
 	if last().Method != http.MethodPost {
 		t.Errorf("method = %s, want POST", last().Method)
 	}
@@ -512,7 +514,7 @@ func TestWrongPassphraseIsNotFound(t *testing.T) {
 		io.WriteString(w, `{"ok":false,"error":{"code":"not_found","message":"not there"}}`)
 	})
 
-	_, _, err := c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"})
+	err := c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"}).Error()
 	if !IsCode(err, CodeNotFound) {
 		t.Fatalf("err = %v, want not_found", err)
 	}

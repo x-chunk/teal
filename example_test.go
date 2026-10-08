@@ -88,10 +88,10 @@ func ExampleError_scope() {
 		log.Fatal(err)
 	}
 
-	_, _, err = c.Vault.Store(context.Background(), teal.VaultStoreRequest{
+	err = c.Vault.Store(context.Background(), teal.VaultStoreRequest{
 		Passphrase: "the pale blue dot",
 		Plaintext:  "AKIA…",
-	})
+	}).Error()
 	if e, ok := teal.AsError(err); ok && e.Code == teal.CodeScopeRequired {
 		fmt.Printf("open %s to this key on the application's screen in the bot\n", e.Scope)
 		return

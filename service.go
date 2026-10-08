@@ -48,8 +48,11 @@ func (b base) postRaw(ctx context.Context, path string, body any) (io.ReadCloser
 	return b.c.doRaw(ctx, Request{Method: http.MethodPost, Path: path, Body: body, Idempotent: true})
 }
 
-// none is the payload of an endpoint that answers with {}: reach for it when
-// only the Meta and the error are worth returning.
+// none is the payload of an endpoint that answers with {}. Its public method
+// answers with a Response[struct{}], written out so the signature reads
+// without this alias:
 //
-//	_, meta, err := s.post[none](ctx, "v1/vault/entries/rename", body)
+//	func (s *VaultService) Rename(ctx context.Context, req VaultRenameRequest) result.Result[Response[struct{}]] {
+//		return wrap(s.post[none](ctx, "v1/vault/entries/rename", req))
+//	}
 type none = struct{}

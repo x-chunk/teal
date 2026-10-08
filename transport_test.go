@@ -148,8 +148,7 @@ func TestServerFailureIsRetriedOnlyWhenItIsSafe(t *testing.T) {
 		}, 3},
 		{"delete", func(c *Client) error { _, err := c.Actions.Delete(context.Background(), 3); return err }, 3},
 		{"write", func(c *Client) error {
-			_, _, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"})
-			return err
+			return c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"}).Error()
 		}, 1},
 		{"patch", func(c *Client) error {
 			_, _, err := c.Settings.UpdateLanguage(context.Background(), LanguageUpdateRequest{Language: "en"})
@@ -189,7 +188,7 @@ func TestRateRefusalIsRetriedEvenOnAWrite(t *testing.T) {
 		io.WriteString(w, `{"ok":false,"error":{"code":"rate_limited"}}`)
 	}, WithRetry(2, time.Millisecond))
 
-	if _, _, err := c.Vault.Store(context.Background(), VaultStoreRequest{}); err != nil {
+	if err := c.Vault.Store(context.Background(), VaultStoreRequest{}).Error(); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
 	if calls != 2 {
@@ -212,14 +211,12 @@ func TestRetryFollowsWhatTheRefusalSays(t *testing.T) {
 		{"busy write", http.StatusServiceUnavailable,
 			`{"ok":false,"error":{"code":"busy","message":"the vault is busy; retry shortly"}}`,
 			func(c *Client) error {
-				_, _, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"})
-				return err
+				return c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"}).Error()
 			}, CodeBusy, 3},
 		{"locked vault", http.StatusTooManyRequests,
 			`{"ok":false,"error":{"code":"rate_limited","message":"locked","retry_after":900,"reason":"vault_locked"}}`,
 			func(c *Client) error {
-				_, _, err := c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"})
-				return err
+				return c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"}).Error()
 			}, CodeRateLimited, 1},
 		{"model training", http.StatusServiceUnavailable,
 			`{"ok":false,"error":{"code":"unavailable","message":"fitting","retry_after":60,"reason":"model_training"}}`,
