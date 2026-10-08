@@ -209,7 +209,7 @@ func TestRetentionUpdateSendsOnlyWhatIsSet(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _, sent := serve(t, `{"ok":true,"data":{}}`)
-			if _, _, err := c.Settings.UpdateRetention(context.Background(), tc.req); err != nil {
+			if err := c.Settings.UpdateRetention(context.Background(), tc.req).Error(); err != nil {
 				t.Fatalf("UpdateRetention: %v", err)
 			}
 			if sent() != tc.want {
@@ -398,19 +398,21 @@ func TestSettingsCarryTheirChoices(t *testing.T) {
 	c, _, _ := serve(t, `{"ok":true,"data":{"mode": "rotate", "ttl_seconds": 2592000, "in_chat": false,
 		"can_ttl": true, "can_in_chat": true,
 		"ttl_choices": [0, 86400, 604800, 2592000, 7776000, 15552000, 31536000]}}`)
-	r, _, err := c.Settings.Retention(context.Background())
+	retention, err := c.Settings.Retention(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("Settings.Retention: %v", err)
 	}
+	r := retention.Data
 	if len(r.TTLChoices) != 7 || r.TTLChoices[0] != 0 || r.TTLChoices[3] != r.TTLSeconds {
 		t.Errorf("retention = %+v", r)
 	}
 
 	c, _, _ = serve(t, `{"ok":true,"data":{"reveal_ttl_seconds": 60, "auto_deletes": true, "can_reveal_ttl": true, "reveal_ttl_choices": [15, 30, 60, 180, 300, 600, 1800]}}`)
-	v, _, err := c.Settings.Vault(context.Background())
+	vault, err := c.Settings.Vault(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("Settings.Vault: %v", err)
 	}
+	v := vault.Data
 	if len(v.RevealTTLChoices) != 7 || v.RevealTTLChoices[2] != v.RevealTTLSeconds {
 		t.Errorf("vault settings = %+v", v)
 	}

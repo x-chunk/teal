@@ -133,13 +133,14 @@ func ExampleSettingsService_UpdateRetention() {
 	mode := teal.RetentionRotate
 	ttl := int64(30 * 24 * time.Hour / time.Second)
 
-	r, _, err := c.Settings.UpdateRetention(context.Background(), teal.RetentionUpdateRequest{
+	resp, err := c.Settings.UpdateRetention(context.Background(), teal.RetentionUpdateRequest{
 		Mode:       &mode,
 		TTLSeconds: &ttl,
-	})
+	}).Value()
 	if err != nil {
 		log.Fatal(err)
 	}
+	r := resp.Data
 	fmt.Println(r.Mode, r.TTLSeconds)
 }
 

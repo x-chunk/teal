@@ -151,8 +151,7 @@ func TestServerFailureIsRetriedOnlyWhenItIsSafe(t *testing.T) {
 			return c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"}).Error()
 		}, 1},
 		{"patch", func(c *Client) error {
-			_, _, err := c.Settings.UpdateLanguage(context.Background(), LanguageUpdateRequest{Language: "en"})
-			return err
+			return c.Settings.UpdateLanguage(context.Background(), LanguageUpdateRequest{Language: "en"}).Error()
 		}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
