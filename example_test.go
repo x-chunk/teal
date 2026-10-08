@@ -32,15 +32,16 @@ func ExampleArchiveService_Search() {
 		log.Fatal(err)
 	}
 
-	res, meta, err := c.Archive.Search(context.Background(), teal.SearchRequest{
+	resp, err := c.Archive.Search(context.Background(), teal.SearchRequest{
 		Conditions: []teal.Condition{
 			{Field: "text", Mode: teal.MatchContains, Value: "invoice"},
 			{Field: "created", Mode: teal.MatchEquals, Conn: teal.ConnAnd, Value: "2026-09-01"},
 		},
-	})
+	}).Value()
 	if err != nil {
 		log.Fatal(err)
 	}
+	res, meta := resp.Data, resp.Meta
 
 	fmt.Printf("%d matches over %d pages, cost %s\n", res.Total, res.Pages, meta.Cost)
 	if meta.HasBalance {
@@ -57,15 +58,16 @@ func ExampleArchiveService_SearchPage() {
 	}
 	ctx := context.Background()
 
-	res, _, err := c.Archive.Search(ctx, teal.SearchRequest{
+	resp, err := c.Archive.Search(ctx, teal.SearchRequest{
 		Conditions: []teal.Condition{{Field: "text", Mode: teal.MatchContains, Value: "invoice"}},
-	})
+	}).Value()
 	if err != nil {
 		log.Fatal(err)
 	}
+	res := resp.Data
 
 	for page := 1; page < res.Pages; page++ {
-		next, meta, err := c.Archive.SearchPage(ctx, teal.SearchPageRequest{QueryID: res.QueryID, Page: page})
+		resp, err := c.Archive.SearchPage(ctx, teal.SearchPageRequest{QueryID: res.QueryID, Page: page}).Value()
 		if teal.IsCode(err, teal.CodeNotFound) {
 			// Forgotten: past its half hour, or the service restarted.
 			break
@@ -73,6 +75,7 @@ func ExampleArchiveService_SearchPage() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		next, meta := resp.Data, resp.Meta
 		fmt.Printf("page %d: %d messages, cost %s\n", next.Page, len(next.Messages), meta.Cost)
 	}
 }
@@ -106,7 +109,7 @@ func ExampleIsCode() {
 		log.Fatal(err)
 	}
 
-	_, _, err = c.Archive.Search(context.Background(), teal.SearchRequest{})
+	err = c.Archive.Search(context.Background(), teal.SearchRequest{}).Error()
 	switch {
 	case teal.IsCode(err, teal.CodeQuotaExhausted):
 		var e *teal.Error
@@ -148,10 +151,11 @@ func ExampleArchiveService_Export() {
 		log.Fatal(err)
 	}
 
-	body, meta, err := c.Archive.Export(context.Background(), teal.SearchRequest{})
+	resp, err := c.Archive.Export(context.Background(), teal.SearchRequest{}).Value()
 	if err != nil {
 		log.Fatal(err)
 	}
+	body, meta := resp.Data, resp.Meta
 	defer body.Close()
 
 	f, err := os.Create("export.json")

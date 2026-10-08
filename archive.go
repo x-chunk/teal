@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"strconv"
+
+	"go.xchunk.org/anvil/v2/result"
 )
 
 // ArchiveService reads the archive.
@@ -25,8 +27,8 @@ type ArchiveService struct{ base }
 // Fields lists what a condition may name.
 //
 // POST /v1/messages/search.
-func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (SearchResult, *Meta, error) {
-	return s.query[SearchResult](ctx, "v1/messages/search", req)
+func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) result.Result[Response[SearchResult]] {
+	return wrap(s.query[SearchResult](ctx, "v1/messages/search", req))
 }
 
 // SearchPage turns to another page of a query Search already ran, named by
@@ -43,8 +45,8 @@ func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (SearchR
 // the search again.
 //
 // POST /v1/messages/search/page.
-func (s *ArchiveService) SearchPage(ctx context.Context, req SearchPageRequest) (SearchResult, *Meta, error) {
-	return s.query[SearchResult](ctx, "v1/messages/search/page", req)
+func (s *ArchiveService) SearchPage(ctx context.Context, req SearchPageRequest) result.Result[Response[SearchResult]] {
+	return wrap(s.query[SearchResult](ctx, "v1/messages/search/page", req))
 }
 
 // Count answers the same query with the number of matches and nothing else.
@@ -54,16 +56,17 @@ func (s *ArchiveService) SearchPage(ctx context.Context, req SearchPageRequest) 
 // billed as the query it is.
 //
 // POST /v1/messages/count.
-func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) (CountResult, *Meta, error) {
-	return s.query[CountResult](ctx, "v1/messages/count", req)
+func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) result.Result[Response[CountResult]] {
+	return wrap(s.query[CountResult](ctx, "v1/messages/count", req))
 }
 
 // Export streams every match as one JSON document, for a client to write
 // straight to a file. It is the only endpoint that does not answer in the
-// envelope, so the body comes back undecoded — and the caller closes it.
+// envelope, so the body comes back undecoded as Response.Data — and the
+// caller closes it.
 //
 // The number of messages it carries is in the X-Aether-Export-Total header,
-// reachable as Meta.Header.Get("X-Aether-Export-Total"), and in the
+// reachable as Response.Meta.Header.Get("X-Aether-Export-Total"), and in the
 // document's own Total field.
 //
 // The whole result is priced and charged before the first byte is written —
@@ -84,16 +87,16 @@ func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) (CountRes
 // paid for.
 //
 // POST /v1/messages/export.
-func (s *ArchiveService) Export(ctx context.Context, req SearchRequest) (io.ReadCloser, *Meta, error) {
-	return s.postRaw(ctx, "v1/messages/export", req)
+func (s *ArchiveService) Export(ctx context.Context, req SearchRequest) result.Result[Response[io.ReadCloser]] {
+	return wrap(s.postRaw(ctx, "v1/messages/export", req))
 }
 
 // Chats returns one page of the conversations the archive holds, with how
 // many messages each carries. A nil request asks for the first page.
 //
 // GET /v1/chats.
-func (s *ArchiveService) Chats(ctx context.Context, req *ChatsRequest) (ChatList, *Meta, error) {
-	return s.get[ChatList](ctx, "v1/chats", req.query())
+func (s *ArchiveService) Chats(ctx context.Context, req *ChatsRequest) result.Result[Response[ChatList]] {
+	return wrap(s.get[ChatList](ctx, "v1/chats", req.query()))
 }
 
 // Message reads one message by the archive's own id, which is what a search
@@ -101,8 +104,8 @@ func (s *ArchiveService) Chats(ctx context.Context, req *ChatsRequest) (ChatList
 // only unique inside a chat.
 //
 // GET /v1/messages/{id}.
-func (s *ArchiveService) Message(ctx context.Context, id int64) (Message, *Meta, error) {
-	return s.get[Message](ctx, "v1/messages/"+itoa(id), nil)
+func (s *ArchiveService) Message(ctx context.Context, id int64) result.Result[Response[Message]] {
+	return wrap(s.get[Message](ctx, "v1/messages/"+itoa(id), nil))
 }
 
 // Versions returns every version of a message's text, latest first. The first
@@ -111,8 +114,8 @@ func (s *ArchiveService) Message(ctx context.Context, id int64) (Message, *Meta,
 // CodeForbidden.
 //
 // GET /v1/messages/{id}/versions.
-func (s *ArchiveService) Versions(ctx context.Context, id int64) (VersionList, *Meta, error) {
-	return s.get[VersionList](ctx, "v1/messages/"+itoa(id)+"/versions", nil)
+func (s *ArchiveService) Versions(ctx context.Context, id int64) result.Result[Response[VersionList]] {
+	return wrap(s.get[VersionList](ctx, "v1/messages/"+itoa(id)+"/versions", nil))
 }
 
 // Fields lists every column a Condition may name, and the match modes each
@@ -121,8 +124,8 @@ func (s *ArchiveService) Versions(ctx context.Context, id int64) (VersionList, *
 // listed never reaches the database.
 //
 // GET /v1/fields.
-func (s *ArchiveService) Fields(ctx context.Context) ([]Field, *Meta, error) {
-	return s.get[[]Field](ctx, "v1/fields", nil)
+func (s *ArchiveService) Fields(ctx context.Context) result.Result[Response[[]Field]] {
+	return wrap(s.get[[]Field](ctx, "v1/fields", nil))
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }

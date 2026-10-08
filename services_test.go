@@ -222,12 +222,13 @@ func TestRetentionUpdateSendsOnlyWhatIsSet(t *testing.T) {
 func TestSearchBodyLeavesOutWhatWasNotAsked(t *testing.T) {
 	c, _, sent := serve(t, `{"ok":true,"data":{"total":37,"pages":4,"per_page":10}}`)
 
-	res, _, err := c.Archive.Search(context.Background(), SearchRequest{
+	resp, err := c.Archive.Search(context.Background(), SearchRequest{
 		Conditions: []Condition{{Field: "text", Mode: MatchContains, Value: "invoice"}},
-	})
+	}).Value()
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
+	res := resp.Data
 	want := `{"conditions":[{"field":"text","mode":"ct","value":"invoice"}]}`
 	if sent() != want {
 		t.Errorf("body = %s, want %s", sent(), want)
@@ -242,10 +243,10 @@ func TestConditionValueIsAlwaysText(t *testing.T) {
 	c, _, sent := serve(t, `{"ok":true,"data":{"total":412}}`)
 
 	chat := int64(-1001234567890)
-	_, _, err := c.Archive.Count(context.Background(), SearchRequest{
+	err := c.Archive.Count(context.Background(), SearchRequest{
 		Chat:       &chat,
 		Conditions: []Condition{{Field: "deleted", Value: "true"}},
-	})
+	}).Error()
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}
@@ -269,13 +270,14 @@ func TestSearchPageTurnsByTheQueryID(t *testing.T) {
 		"per_page": 10,
 		"query_id": "5tQx0bYFvHh1nC2kq9Lr3w"}}`)
 
-	res, _, err := c.Archive.SearchPage(context.Background(), SearchPageRequest{
+	resp, err := c.Archive.SearchPage(context.Background(), SearchPageRequest{
 		QueryID: "5tQx0bYFvHh1nC2kq9Lr3w",
 		Page:    1,
-	})
+	}).Value()
 	if err != nil {
 		t.Fatalf("SearchPage: %v", err)
 	}
+	res := resp.Data
 	if last().Method != http.MethodPost || last().URL.Path != "/v1/messages/search/page" {
 		t.Errorf("request = %s %s", last().Method, last().URL.Path)
 	}
@@ -300,10 +302,11 @@ func TestMessageCarriesItsReplyAndNames(t *testing.T) {
 		"media_type": "document", "file_id": "BQACAgIAAx…",
 		"created_at": "2026-09-01T09:14:02Z", "reply_to_message_id": 4470}}`)
 
-	msg, _, err := c.Archive.Message(context.Background(), 90210)
+	resp, err := c.Archive.Message(context.Background(), 90210).Value()
 	if err != nil {
 		t.Fatalf("Message: %v", err)
 	}
+	msg := resp.Data
 	if msg.FirstName != "Ann" || msg.LastName != "Weber" || msg.SenderName != "Ann" {
 		t.Errorf("names = %+v", msg)
 	}
@@ -417,10 +420,10 @@ func TestPathIDAndQuery(t *testing.T) {
 		path, rawQ string
 	}{
 		{"message by id",
-			func(c *Client) error { _, _, err := c.Archive.Message(context.Background(), 90210); return err },
+			func(c *Client) error { return c.Archive.Message(context.Background(), 90210).Error() },
 			"/v1/messages/90210", ""},
 		{"versions",
-			func(c *Client) error { _, _, err := c.Archive.Versions(context.Background(), 90210); return err },
+			func(c *Client) error { return c.Archive.Versions(context.Background(), 90210).Error() },
 			"/v1/messages/90210/versions", ""},
 		{"negative chat id",
 			func(c *Client) error {
@@ -438,8 +441,7 @@ func TestPathIDAndQuery(t *testing.T) {
 			"/v1/usage", ""},
 		{"chats page",
 			func(c *Client) error {
-				_, _, err := c.Archive.Chats(context.Background(), &ChatsRequest{Page: 2})
-				return err
+				return c.Archive.Chats(context.Background(), &ChatsRequest{Page: 2}).Error()
 			},
 			"/v1/chats", "page=2"},
 	} {
@@ -485,10 +487,11 @@ func TestExportHandsBackTheDocument(t *testing.T) {
 		io.WriteString(w, `{"account_id":1256738876,"total":412,"filters":1,"messages":[]}`)
 	})
 
-	body, meta, err := c.Archive.Export(context.Background(), SearchRequest{})
+	resp, err := c.Archive.Export(context.Background(), SearchRequest{}).Value()
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
+	body, meta := resp.Data, resp.Meta
 	defer body.Close()
 
 	var doc ExportDocument

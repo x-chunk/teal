@@ -141,12 +141,10 @@ func TestServerFailureIsRetriedOnlyWhenItIsSafe(t *testing.T) {
 	}{
 		{"read", func(c *Client) error { return c.App.Get(context.Background()).Error() }, 3},
 		{"query", func(c *Client) error {
-			_, _, err := c.Archive.Count(context.Background(), SearchRequest{})
-			return err
+			return c.Archive.Count(context.Background(), SearchRequest{}).Error()
 		}, 3},
 		{"page", func(c *Client) error {
-			_, _, err := c.Archive.SearchPage(context.Background(), SearchPageRequest{QueryID: "q", Page: 1})
-			return err
+			return c.Archive.SearchPage(context.Background(), SearchPageRequest{QueryID: "q", Page: 1}).Error()
 		}, 3},
 		{"delete", func(c *Client) error { _, err := c.Actions.Delete(context.Background(), 3); return err }, 3},
 		{"write", func(c *Client) error {
