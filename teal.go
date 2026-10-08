@@ -42,7 +42,7 @@
 package teal
 
 // Version is this client's version, sent in the User-Agent header.
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 // DefaultBaseURL is used when no other base URL is configured: the public
 // deployment the documentation at https://aether.xchunk.org/docs describes.
