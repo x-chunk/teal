@@ -9,12 +9,13 @@ import (
 
 // base is embedded in every service and folds one call down to one line:
 //
-//	func (s *AppService) Get(ctx context.Context) (Application, *Meta, error) {
-//		return s.get[Application](ctx, "v1/app", nil)
+//	func (s *AppService) Get(ctx context.Context) result.Result[Response[Application]] {
+//		return wrap(s.get[Application](ctx, "v1/app", nil))
 //	}
 //
-// The type is always written out, because T is in the result and Go infers
-// only from arguments.
+// The helpers speak (payload, meta, error), and wrap turns that into the
+// Result a public method answers with. The type is always written out,
+// because T is in the result and Go infers only from arguments.
 type base struct{ c *Client }
 
 // query is post for the archive's reads, which are POSTs only because a query

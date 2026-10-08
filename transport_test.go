@@ -125,7 +125,7 @@ func TestRefusalWithASuccessStatusIsStillAnError(t *testing.T) {
 		io.WriteString(w, `{"ok":false,"error":{"code":"forbidden","message":"the plan does not open this"}}`)
 	})
 
-	_, _, err := c.App.Get(context.Background())
+	err := c.App.Get(context.Background()).Error()
 	if !IsCode(err, CodeForbidden) {
 		t.Fatalf("err = %v, want forbidden", err)
 	}
@@ -139,7 +139,7 @@ func TestServerFailureIsRetriedOnlyWhenItIsSafe(t *testing.T) {
 		call  func(*Client) error
 		calls int
 	}{
-		{"read", func(c *Client) error { _, _, err := c.App.Get(context.Background()); return err }, 3},
+		{"read", func(c *Client) error { return c.App.Get(context.Background()).Error() }, 3},
 		{"query", func(c *Client) error {
 			_, _, err := c.Archive.Count(context.Background(), SearchRequest{})
 			return err
@@ -306,7 +306,7 @@ func TestRefusalSaysWhatWouldOpenIt(t *testing.T) {
 				io.WriteString(w, tc.body)
 			})
 
-			_, _, err := c.App.Get(context.Background())
+			err := c.App.Get(context.Background()).Error()
 			e, ok := AsError(err)
 			if !ok {
 				t.Fatalf("err = %v, want an *Error", err)

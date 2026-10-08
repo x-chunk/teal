@@ -36,10 +36,11 @@ func TestAppGetDecodesTheDocumentedAnswer(t *testing.T) {
 		"disabled": false, "created_at": "2026-09-01T10:04:11Z",
 		"account_id": 1256738876}}`)
 
-	app, _, err := c.App.Get(context.Background())
+	resp, err := c.App.Get(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("App.Get: %v", err)
 	}
+	app := resp.Data
 	if app.ID != 12 || app.Name != "Support desk" || app.Billing != BillingHybrid {
 		t.Errorf("app = %+v", app)
 	}
@@ -70,10 +71,11 @@ func TestAccountSaysWhenItWasMeasured(t *testing.T) {
 		],
 		"measured_at": 1757160000}}`)
 
-	acc, _, err := c.App.Account(context.Background())
+	resp, err := c.App.Account(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("App.Account: %v", err)
 	}
+	acc := resp.Data
 	if acc.Plan.Tier != "max" || len(acc.Plan.Permissions) != 2 {
 		t.Errorf("plan = %+v", acc.Plan)
 	}
@@ -91,10 +93,11 @@ func TestUnlimitedQuotaDecodes(t *testing.T) {
 		{"key":"search:daily","label":"Searches","unit":"searches",
 		 "limit":null,"used":41,"remaining":null,"unlimited":true,"window":"day"}]}`)
 
-	quotas, _, err := c.App.Quotas(context.Background())
+	resp, err := c.App.Quotas(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("App.Quotas: %v", err)
 	}
+	quotas := resp.Data
 	if len(quotas) != 1 || !quotas[0].Unlimited || quotas[0].Used != 41 {
 		t.Errorf("quotas = %+v", quotas)
 	}
@@ -113,10 +116,11 @@ func TestUsageBreaksDownByDayAndOperation(t *testing.T) {
 			{"op": "search:query", "calls": 8, "units": 8, "credits": {"credits": 8000, "display": "$0.008"}, "day": "2026-09-05"}
 		]}}`)
 
-	usage, _, err := c.App.Usage(context.Background(), &UsageRequest{ByDay: true})
+	resp, err := c.App.Usage(context.Background(), &UsageRequest{ByDay: true}).Value()
 	if err != nil {
 		t.Fatalf("App.Usage: %v", err)
 	}
+	usage := resp.Data
 	if len(usage.Ops) != 2 || usage.Ops[0].Day != "" {
 		t.Errorf("ops = %+v", usage.Ops)
 	}
@@ -144,10 +148,11 @@ func TestPricesDecodesEveryRate(t *testing.T) {
 		"global_rate": {"per_second": 300, "burst": 600},
 		"quota_ttl_seconds": 30}}`)
 
-	prices, _, err := c.App.Prices(context.Background())
+	resp, err := c.App.Prices(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("App.Prices: %v", err)
 	}
+	prices := resp.Data
 	if prices.Rates[BillingCredits].PerSecond != 50 || prices.Prices[0].Charging != ChargingAlways {
 		t.Errorf("prices = %+v", prices)
 	}
@@ -156,10 +161,11 @@ func TestPricesDecodesEveryRate(t *testing.T) {
 	}
 
 	c, _, _ = serve(t, `{"ok":true,"data":{"rates":{"shared":{"per_second":0.5,"burst":2}}}}`)
-	prices, _, err = c.App.Prices(context.Background())
+	resp, err = c.App.Prices(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("App.Prices with a fractional rate: %v", err)
 	}
+	prices = resp.Data
 	if prices.Rates[BillingShared].PerSecond != 0.5 || prices.AccountRate != nil {
 		t.Errorf("prices = %+v", prices)
 	}
@@ -173,10 +179,11 @@ func TestQuotaKeepsItsWindow(t *testing.T) {
 		 "used":3,"remaining":97,"unlimited":false,"window":"week",
 		 "reset_at":"2026-09-08T00:00:00Z"}]}`)
 
-	quotas, _, err := c.App.Quotas(context.Background())
+	resp, err := c.App.Quotas(context.Background()).Value()
 	if err != nil {
 		t.Fatalf("App.Quotas: %v", err)
 	}
+	quotas := resp.Data
 	if len(quotas) != 2 {
 		t.Fatalf("got %d quotas, want 2", len(quotas))
 	}
@@ -423,12 +430,11 @@ func TestPathIDAndQuery(t *testing.T) {
 			"/v1/portraits/-1001234567890", ""},
 		{"usage window",
 			func(c *Client) error {
-				_, _, err := c.App.Usage(context.Background(), &UsageRequest{Days: 7, ByDay: true})
-				return err
+				return c.App.Usage(context.Background(), &UsageRequest{Days: 7, ByDay: true}).Error()
 			},
 			"/v1/usage", "by_day=true&days=7"},
 		{"usage defaults",
-			func(c *Client) error { _, _, err := c.App.Usage(context.Background(), nil); return err },
+			func(c *Client) error { return c.App.Usage(context.Background(), nil).Error() },
 			"/v1/usage", ""},
 		{"chats page",
 			func(c *Client) error {

@@ -17,10 +17,11 @@ func ExampleNew() {
 		log.Fatal(err)
 	}
 
-	app, _, err := c.App.Get(context.Background())
+	resp, err := c.App.Get(context.Background()).Value()
 	if err != nil {
 		log.Fatal(err)
 	}
+	app := resp.Data
 	fmt.Printf("%s is on %s with %s left\n", app.Name, app.Billing, app.Balance.Credits)
 }
 
