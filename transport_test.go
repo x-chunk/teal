@@ -221,8 +221,7 @@ func TestRetryFollowsWhatTheRefusalSays(t *testing.T) {
 		{"model training", http.StatusServiceUnavailable,
 			`{"ok":false,"error":{"code":"unavailable","message":"fitting","retry_after":60,"reason":"model_training"}}`,
 			func(c *Client) error {
-				_, _, err := c.Insights.Portrait(context.Background(), -100)
-				return err
+				return c.Insights.Portrait(context.Background(), -100).Error()
 			}, CodeUnavailable, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

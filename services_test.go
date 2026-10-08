@@ -381,10 +381,11 @@ func TestPortraitCarriesThePlanSections(t *testing.T) {
 		"signals": [{"kind": "drift", "key": "style_shift", "text": "The style shifted.", "severity": "notice"}],
 		"confidence": {"level": "high", "score": 0.86}}}`)
 
-	p, _, err := c.Insights.Portrait(context.Background(), -1001234567890)
+	resp, err := c.Insights.Portrait(context.Background(), -1001234567890).Value()
 	if err != nil {
 		t.Fatalf("Insights.Portrait: %v", err)
 	}
+	p := resp.Data
 	if p.Archetype.Description == "" || len(p.Archetype.Terms) != 1 || p.Traits[0].Note == "" {
 		t.Errorf("archetype = %+v, traits = %+v", p.Archetype, p.Traits)
 	}
@@ -429,8 +430,7 @@ func TestPathIDAndQuery(t *testing.T) {
 			"/v1/messages/90210/versions", ""},
 		{"negative chat id",
 			func(c *Client) error {
-				_, _, err := c.Insights.Portrait(context.Background(), -1001234567890)
-				return err
+				return c.Insights.Portrait(context.Background(), -1001234567890).Error()
 			},
 			"/v1/portraits/-1001234567890", ""},
 		{"usage window",

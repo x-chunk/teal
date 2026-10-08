@@ -1,6 +1,10 @@
 package teal
 
-import "context"
+import (
+	"context"
+
+	"go.xchunk.org/anvil/v2/result"
+)
 
 // InsightsService reads what the archive adds up to.
 type InsightsService struct{ base }
@@ -14,8 +18,8 @@ type InsightsService struct{ base }
 // answered CodeBusy with a RetryAfter, and the transport asks again.
 //
 // GET /v1/insights.
-func (s *InsightsService) Get(ctx context.Context) (Insights, *Meta, error) {
-	return s.get[Insights](ctx, "v1/insights", nil)
+func (s *InsightsService) Get(ctx context.Context) result.Result[Response[Insights]] {
+	return wrap(s.get[Insights](ctx, "v1/insights", nil))
 }
 
 // Portrait reads a whole conversation and describes the person on the other
@@ -39,6 +43,6 @@ func (s *InsightsService) Get(ctx context.Context) (Insights, *Meta, error) {
 // request is charged, including a repeat of the same chat.
 //
 // GET /v1/portraits/{chat}.
-func (s *InsightsService) Portrait(ctx context.Context, chat int64) (Portrait, *Meta, error) {
-	return s.get[Portrait](ctx, "v1/portraits/"+itoa(chat), nil)
+func (s *InsightsService) Portrait(ctx context.Context, chat int64) result.Result[Response[Portrait]] {
+	return wrap(s.get[Portrait](ctx, "v1/portraits/"+itoa(chat), nil))
 }
