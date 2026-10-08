@@ -4,20 +4,32 @@
 //	if err != nil {
 //		return err
 //	}
-//	app, meta, err := c.App.Get(ctx)
+//	r, err := c.App.Get(ctx).Value()
+//	if err != nil {
+//		return err
+//	}
+//	fmt.Println(r.Data.Name, r.Meta.Balance)
 //
 // Every endpoint hangs off a service on the client — App, Archive, Vault,
-// Actions, Insights and Settings — and every method returns three things: its
-// payload, a *Meta and an error.
+// Actions, Insights and Settings — and every method answers with a
+// result.Result (go.xchunk.org/anvil/v2/result) of a Response: the payload in
+// Data, and the Meta it came with. An endpoint that answers {} has a
+// Response[struct{}], so its Meta is there all the same. A Result can be
+// taken apart with Value, or chained:
+//
+//	total := c.Archive.Count(ctx, req).
+//		Map(func(r teal.Response[teal.CountResult]) int64 { return r.Data.Total }).
+//		UnwrapOr(0)
 //
 // Meta is what the request cost, read from the X-Aether-* headers: the
 // billing mode it was served under, the credits it spent, the balance left.
-// It comes back on a refusal too, because the API refunds before it answers,
-// so the balance in it is the balance actually left.
 //
 // Failures are *Error, carrying the API's own code and, where one code covers
-// several states, a reason. Branch on those with IsCode and Error.Reason and
-// never on the message, which is written for a person reading a log.
+// several states, a reason. Branch on those with IsCode and Error.Reason —
+// on the Result's Error, or the error Value returns — and never on the
+// message, which is written for a person reading a log. A refusal carries its
+// Meta in Error.Meta: the API refunds before it answers, so the balance in it
+// is the balance actually left.
 //
 // The transport retries what can be sent again without doing anything twice:
 // a rate refusal and busy, honouring Retry-After, whatever the method —

@@ -30,7 +30,7 @@ Up to v0.2.0 the module was `github.com/x-chunk/teal`. From v0.3.0 it is
 teal/
 ├── teal.go            — package doc, version, default base URL
 ├── client.go          — the Client and its options
-├── transport.go       — the HTTP client: Request, (*Client).Do[T], DoRaw, Meta
+├── transport.go       — the HTTP client: Request, Response, (*Client).Do[T], DoRaw, Meta
 ├── service.go         — base, embedded in every service: get/post/patch/del[T]
 ├── errors.go          — *Error, the code constants, IsCode/AsError
 ├── models.go          — every payload and request type
@@ -68,22 +68,39 @@ documentation one to one.
 **Query parameters are structs too**, with an unexported `query()` that builds
 the `url.Values`. A nil request means the API's own defaults.
 
-**Every method returns `(payload, *Meta, error)`**, and one that answers `{}`
-returns just `(*Meta, error)`.
+**Every method answers with a `result.Result[Response[T]]`**, from
+[`go.xchunk.org/anvil/v2/result`](https://pkg.go.dev/go.xchunk.org/anvil/v2/result):
+`Response.Data` is the payload and `Response.Meta` what it cost. One that
+answers `{}` has a `Response[struct{}]`, so its Meta is there all the same. A
+refusal holds the `*Error`, which carries its own Meta in `Error.Meta`.
+
+```go
+r, err := c.Archive.Search(ctx, req).Value()        // taken apart
+n := c.Archive.Count(ctx, req).                     // or chained
+	Map(func(r teal.Response[teal.CountResult]) int64 { return r.Data.Total }).
+	UnwrapOr(0)
+err = c.Vault.Delete(ctx, teal.VaultDeleteRequest{Passphrase: p}).Error()
+```
+
+`Result` is marked experimental in anvil: its API may still change, and this
+client follows it.
 
 ## Adding an endpoint
 
 Write the payload type in `models.go`, then one line in the service file:
 
 ```go
-func (s *AppService) Quotas(ctx context.Context) ([]Quota, *Meta, error) {
-	return s.get[[]Quota](ctx, "v1/quotas", nil)
+func (s *AppService) Quotas(ctx context.Context) result.Result[Response[[]Quota]] {
+	return wrap(s.get[[]Quota](ctx, "v1/quotas", nil))
 }
 ```
 
-The helpers on `base` are `get`, `post`, `patch`, `del` and `postRaw`; `none`
-is the payload of an endpoint answering `{}`. When none of them fits, reach for
-`s.c.Do[T](ctx, Request{…})` underneath.
+The helpers on `base` are `get`, `post`, `patch`, `del` and `postRaw`, and
+they speak `(payload, *Meta, error)`; `wrap` is the one place that becomes the
+Result a public method answers with. `none` is the payload of an endpoint
+answering `{}`, written out as `struct{}` in the public signature. When none of
+the helpers fits, reach for `s.c.Do[T](ctx, Request{…})`, which answers with a
+Result already.
 
 ## Where the shapes come from
 

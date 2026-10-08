@@ -49,6 +49,24 @@ func ExampleArchiveService_Search() {
 	}
 }
 
+// Every method answers with a result.Result, so a call can be chained rather
+// than taken apart: here the count is pulled out of the Response, and a
+// refusal of any kind reads as zero.
+func ExampleArchiveService_Count() {
+	c, err := teal.New(os.Getenv("AETHER_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	photos := c.Archive.Count(context.Background(), teal.SearchRequest{
+		Conditions: []teal.Condition{{Field: "media", Value: "photo"}},
+	}).
+		Map(func(r teal.Response[teal.CountResult]) int64 { return r.Data.Total }).
+		UnwrapOr(0)
+
+	fmt.Println(photos, "photos archived")
+}
+
 // A search is billed once. Its other pages are turned by the query id its
 // first page carried, for nothing, for half an hour.
 func ExampleArchiveService_SearchPage() {
