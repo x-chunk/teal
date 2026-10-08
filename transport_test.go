@@ -146,7 +146,7 @@ func TestServerFailureIsRetriedOnlyWhenItIsSafe(t *testing.T) {
 		{"page", func(c *Client) error {
 			return c.Archive.SearchPage(context.Background(), SearchPageRequest{QueryID: "q", Page: 1}).Error()
 		}, 3},
-		{"delete", func(c *Client) error { _, err := c.Actions.Delete(context.Background(), 3); return err }, 3},
+		{"delete", func(c *Client) error { return c.Actions.Delete(context.Background(), 3).Error() }, 3},
 		{"write", func(c *Client) error {
 			return c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"}).Error()
 		}, 1},

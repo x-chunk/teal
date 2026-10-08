@@ -350,13 +350,14 @@ func TestActionUpdateSwitchesArgsRequired(t *testing.T) {
 	c, last, sent := serve(t, `{"ok":true,"data":{"id": 3, "name": "order", "body": "Order [[ARG1]] is ready, [[ARG2]].",
  "min_args": 2, "args_required": true, "uses": 42}}`)
 
-	action, _, err := c.Actions.Update(context.Background(), 3, ActionUpdateRequest{
+	resp, err := c.Actions.Update(context.Background(), 3, ActionUpdateRequest{
 		Body:         ptr("Order [[ARG1]] is ready, [[ARG2]]."),
 		ArgsRequired: ptr(true),
-	})
+	}).Value()
 	if err != nil {
 		t.Fatalf("Actions.Update: %v", err)
 	}
+	action := resp.Data
 	if last().Method != http.MethodPatch || last().URL.Path != "/v1/actions/3" {
 		t.Errorf("request = %s %s", last().Method, last().URL.Path)
 	}
