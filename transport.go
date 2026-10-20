@@ -49,8 +49,9 @@ type Response[T any] struct {
 // answers with a nil *Response, never a half-filled one.
 //
 // The meta of a failure is dropped here and not lost: a refusal carries its
-// own in Error.Meta, and a request that never reached the API has none. Only
-// a successful answer that could not be read or decoded leaves without it.
+// own in Error.Meta, a successful answer that could not be read or decoded
+// carries its own in DecodeError.Meta, and a request that never reached the
+// API has none.
 func wrap[T any](data T, meta *Meta, err error) (*Response[T], error) {
 	if err != nil {
 		return nil, err
@@ -84,7 +85,7 @@ func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return out, meta, fmt.Errorf("teal: reading %s %s: %w", req.Method, req.Path, err)
+		return out, meta, &DecodeError{Method: req.Method, Path: req.Path, Meta: meta, Err: err}
 	}
 
 	var env struct {
@@ -92,7 +93,7 @@ func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return out, meta, fmt.Errorf("teal: decoding %s %s: %w", req.Method, req.Path, err)
+		return out, meta, &DecodeError{Method: req.Method, Path: req.Path, Meta: meta, Err: err}
 	}
 	// A refusal normally arrives with a status to match, and send has turned
 	// it into an *Error already. One that arrives with a 2xx would otherwise
@@ -104,7 +105,7 @@ func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 		return out, meta, nil
 	}
 	if err := json.Unmarshal(env.Data, &out); err != nil {
-		return out, meta, fmt.Errorf("teal: decoding %s %s: %w", req.Method, req.Path, err)
+		return out, meta, &DecodeError{Method: req.Method, Path: req.Path, Meta: meta, Err: err}
 	}
 	return out, meta, nil
 }

@@ -2,9 +2,11 @@ package teal
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -353,5 +355,29 @@ func TestWithTimeoutDoesNotMutateTheCallersClient(t *testing.T) {
 	}
 	if c.http.Timeout != time.Second {
 		t.Errorf("timeout = %s, want 1s — options must not depend on order", c.http.Timeout)
+	}
+}
+
+// An answer the client cannot decode was still charged, so its Meta survives
+// on the error.
+func TestDecodeFailureKeepsMeta(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Aether-Cost", "1000")
+		io.WriteString(w, `{"ok":true,"data":{"total":"many"}}`)
+	})
+
+	resp, err := c.Archive.Count(context.Background(), SearchRequest{})
+	if resp != nil {
+		t.Errorf("resp = %+v, want nil", resp)
+	}
+	var de *DecodeError
+	if !errors.As(err, &de) {
+		t.Fatalf("err = %v, want *DecodeError", err)
+	}
+	if de.Meta == nil || de.Meta.Cost != 1000 {
+		t.Errorf("meta = %+v", de.Meta)
+	}
+	if !strings.Contains(err.Error(), "v1/messages/count") {
+		t.Errorf("message = %q", err.Error())
 	}
 }

@@ -14,6 +14,12 @@ refusal still carries its Meta in `Error.Meta`.
 
 The module no longer depends on `go.xchunk.org/anvil/v2`.
 
+### Added
+
+- `*DecodeError`: an answer that was served and charged but could not be read
+  or decoded now keeps its Meta in `DecodeError.Meta` instead of losing it.
+  Match it with `errors.As`.
+
 Before (v0.4.0):
 
 ```go

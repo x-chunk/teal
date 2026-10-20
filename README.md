@@ -40,7 +40,7 @@ teal/
 ├── client.go          — the Client and its options
 ├── transport.go       — the HTTP client: Request, Response, (*Client).Do[T], DoRaw, Meta
 ├── service.go         — base, embedded in every service: get/post/patch/del[T]
-├── errors.go          — *Error, the code constants, IsCode/AsError
+├── errors.go          — *Error, *DecodeError, the code constants, IsCode/AsError
 ├── models.go          — every payload and request type
 ├── app.go             — /v1/app, /usage, /account, /quotas, /prices
 ├── archive.go         — /v1/messages/*, /messages/search/page, /chats, /fields
@@ -80,7 +80,8 @@ the `url.Values`. A nil request means the API's own defaults.
 payload and `Response.Meta` what it cost. One that answers `{}` has a
 `*Response[struct{}]`, so its Meta is there all the same. On an error the
 `*Response` is nil; a refusal is an `*Error`, which carries its own Meta in
-`Error.Meta`.
+`Error.Meta`. An answer that was served and charged but could not be read or
+decoded is a `*DecodeError`, which keeps its Meta in `DecodeError.Meta`.
 
 ```go
 r, err := c.Archive.Count(ctx, req)

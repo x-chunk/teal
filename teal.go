@@ -25,7 +25,8 @@
 // the error a method returns, and never on the message, which is written for
 // a person reading a log. A refusal carries its Meta in Error.Meta: the API
 // refunds before it answers, so the balance in it is the balance actually
-// left.
+// left. An answer that was served but could not be decoded is a *DecodeError,
+// which keeps the Meta of what was charged.
 //
 // The transport retries what can be sent again without doing anything twice:
 // a rate refusal and busy, honouring Retry-After, whatever the method —
