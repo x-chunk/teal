@@ -36,7 +36,7 @@ func TestAppGetDecodesTheDocumentedAnswer(t *testing.T) {
 		"disabled": false, "created_at": "2026-09-01T10:04:11Z",
 		"account_id": 1256738876}}`)
 
-	resp, err := c.App.Get(context.Background()).Value()
+	resp, err := c.App.Get(context.Background())
 	if err != nil {
 		t.Fatalf("App.Get: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestAccountSaysWhenItWasMeasured(t *testing.T) {
 		],
 		"measured_at": 1757160000}}`)
 
-	resp, err := c.App.Account(context.Background()).Value()
+	resp, err := c.App.Account(context.Background())
 	if err != nil {
 		t.Fatalf("App.Account: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestUnlimitedQuotaDecodes(t *testing.T) {
 		{"key":"search:daily","label":"Searches","unit":"searches",
 		 "limit":null,"used":41,"remaining":null,"unlimited":true,"window":"day"}]}`)
 
-	resp, err := c.App.Quotas(context.Background()).Value()
+	resp, err := c.App.Quotas(context.Background())
 	if err != nil {
 		t.Fatalf("App.Quotas: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestUsageBreaksDownByDayAndOperation(t *testing.T) {
 			{"op": "search:query", "calls": 8, "units": 8, "credits": {"credits": 8000, "display": "$0.008"}, "day": "2026-09-05"}
 		]}}`)
 
-	resp, err := c.App.Usage(context.Background(), &UsageRequest{ByDay: true}).Value()
+	resp, err := c.App.Usage(context.Background(), &UsageRequest{ByDay: true})
 	if err != nil {
 		t.Fatalf("App.Usage: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestPricesDecodesEveryRate(t *testing.T) {
 		"global_rate": {"per_second": 300, "burst": 600},
 		"quota_ttl_seconds": 30}}`)
 
-	resp, err := c.App.Prices(context.Background()).Value()
+	resp, err := c.App.Prices(context.Background())
 	if err != nil {
 		t.Fatalf("App.Prices: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestPricesDecodesEveryRate(t *testing.T) {
 	}
 
 	c, _, _ = serve(t, `{"ok":true,"data":{"rates":{"shared":{"per_second":0.5,"burst":2}}}}`)
-	resp, err = c.App.Prices(context.Background()).Value()
+	resp, err = c.App.Prices(context.Background())
 	if err != nil {
 		t.Fatalf("App.Prices with a fractional rate: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestQuotaKeepsItsWindow(t *testing.T) {
 		 "used":3,"remaining":97,"unlimited":false,"window":"week",
 		 "reset_at":"2026-09-08T00:00:00Z"}]}`)
 
-	resp, err := c.App.Quotas(context.Background()).Value()
+	resp, err := c.App.Quotas(context.Background())
 	if err != nil {
 		t.Fatalf("App.Quotas: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestRetentionUpdateSendsOnlyWhatIsSet(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _, sent := serve(t, `{"ok":true,"data":{}}`)
-			if err := c.Settings.UpdateRetention(context.Background(), tc.req).Error(); err != nil {
+			if _, err := c.Settings.UpdateRetention(context.Background(), tc.req); err != nil {
 				t.Fatalf("UpdateRetention: %v", err)
 			}
 			if sent() != tc.want {
@@ -224,7 +224,7 @@ func TestSearchBodyLeavesOutWhatWasNotAsked(t *testing.T) {
 
 	resp, err := c.Archive.Search(context.Background(), SearchRequest{
 		Conditions: []Condition{{Field: "text", Mode: MatchContains, Value: "invoice"}},
-	}).Value()
+	})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -243,10 +243,10 @@ func TestConditionValueIsAlwaysText(t *testing.T) {
 	c, _, sent := serve(t, `{"ok":true,"data":{"total":412}}`)
 
 	chat := int64(-1001234567890)
-	err := c.Archive.Count(context.Background(), SearchRequest{
+	_, err := c.Archive.Count(context.Background(), SearchRequest{
 		Chat:       &chat,
 		Conditions: []Condition{{Field: "deleted", Value: "true"}},
-	}).Error()
+	})
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestSearchPageTurnsByTheQueryID(t *testing.T) {
 	resp, err := c.Archive.SearchPage(context.Background(), SearchPageRequest{
 		QueryID: "5tQx0bYFvHh1nC2kq9Lr3w",
 		Page:    1,
-	}).Value()
+	})
 	if err != nil {
 		t.Fatalf("SearchPage: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestMessageCarriesItsReplyAndNames(t *testing.T) {
 		"media_type": "document", "file_id": "BQACAgIAAx…",
 		"created_at": "2026-09-01T09:14:02Z", "reply_to_message_id": 4470}}`)
 
-	resp, err := c.Archive.Message(context.Background(), 90210).Value()
+	resp, err := c.Archive.Message(context.Background(), 90210)
 	if err != nil {
 		t.Fatalf("Message: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestMessageCarriesItsReplyAndNames(t *testing.T) {
 func TestVaultStoreReturnsTheEntryID(t *testing.T) {
 	c, _, _ := serve(t, `{"ok":true,"data":{"entry_id": 31, "recovery_codes": ["7K3QMX9TBA4F8ZRQW2NCHD6PVJ", "Q2W8ERT4YA9M3PKZX7CVBN5H1D", "H6J4K2NM8NP9Q3RS5T7VW1X0YZ", "A1B2C3D4E5F6G7H8J9KM0NPQRS"]}}`)
 
-	resp, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "the pale blue dot", Plaintext: "AKIA…"}).Value()
+	resp, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "the pale blue dot", Plaintext: "AKIA…"})
 	if err != nil {
 		t.Fatalf("Vault.Store: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestVaultStoreReturnsTheEntryID(t *testing.T) {
 func TestVaultRecoverAlwaysSendsTheNewPassphrase(t *testing.T) {
 	c, _, sent := serve(t, `{"ok":true,"data":{}}`)
 
-	if err := c.Vault.Recover(context.Background(), VaultRecoverRequest{Code: "7K3QM-X9TBA"}).Error(); err != nil {
+	if _, err := c.Vault.Recover(context.Background(), VaultRecoverRequest{Code: "7K3QM-X9TBA"}); err != nil {
 		t.Fatalf("Vault.Recover: %v", err)
 	}
 	if want := `{"code":"7K3QM-X9TBA","new_passphrase":""}`; sent() != want {
@@ -353,7 +353,7 @@ func TestActionUpdateSwitchesArgsRequired(t *testing.T) {
 	resp, err := c.Actions.Update(context.Background(), 3, ActionUpdateRequest{
 		Body:         ptr("Order [[ARG1]] is ready, [[ARG2]]."),
 		ArgsRequired: ptr(true),
-	}).Value()
+	})
 	if err != nil {
 		t.Fatalf("Actions.Update: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestPortraitCarriesThePlanSections(t *testing.T) {
 		"signals": [{"kind": "drift", "key": "style_shift", "text": "The style shifted.", "severity": "notice"}],
 		"confidence": {"level": "high", "score": 0.86}}}`)
 
-	resp, err := c.Insights.Portrait(context.Background(), -1001234567890).Value()
+	resp, err := c.Insights.Portrait(context.Background(), -1001234567890)
 	if err != nil {
 		t.Fatalf("Insights.Portrait: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestSettingsCarryTheirChoices(t *testing.T) {
 	c, _, _ := serve(t, `{"ok":true,"data":{"mode": "rotate", "ttl_seconds": 2592000, "in_chat": false,
 		"can_ttl": true, "can_in_chat": true,
 		"ttl_choices": [0, 86400, 604800, 2592000, 7776000, 15552000, 31536000]}}`)
-	retention, err := c.Settings.Retention(context.Background()).Value()
+	retention, err := c.Settings.Retention(context.Background())
 	if err != nil {
 		t.Fatalf("Settings.Retention: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestSettingsCarryTheirChoices(t *testing.T) {
 	}
 
 	c, _, _ = serve(t, `{"ok":true,"data":{"reveal_ttl_seconds": 60, "auto_deletes": true, "can_reveal_ttl": true, "reveal_ttl_choices": [15, 30, 60, 180, 300, 600, 1800]}}`)
-	vault, err := c.Settings.Vault(context.Background()).Value()
+	vault, err := c.Settings.Vault(context.Background())
 	if err != nil {
 		t.Fatalf("Settings.Vault: %v", err)
 	}
@@ -425,27 +425,30 @@ func TestPathIDAndQuery(t *testing.T) {
 		path, rawQ string
 	}{
 		{"message by id",
-			func(c *Client) error { return c.Archive.Message(context.Background(), 90210).Error() },
+			func(c *Client) error { _, err := c.Archive.Message(context.Background(), 90210); return err },
 			"/v1/messages/90210", ""},
 		{"versions",
-			func(c *Client) error { return c.Archive.Versions(context.Background(), 90210).Error() },
+			func(c *Client) error { _, err := c.Archive.Versions(context.Background(), 90210); return err },
 			"/v1/messages/90210/versions", ""},
 		{"negative chat id",
 			func(c *Client) error {
-				return c.Insights.Portrait(context.Background(), -1001234567890).Error()
+				_, err := c.Insights.Portrait(context.Background(), -1001234567890)
+				return err
 			},
 			"/v1/portraits/-1001234567890", ""},
 		{"usage window",
 			func(c *Client) error {
-				return c.App.Usage(context.Background(), &UsageRequest{Days: 7, ByDay: true}).Error()
+				_, err := c.App.Usage(context.Background(), &UsageRequest{Days: 7, ByDay: true})
+				return err
 			},
 			"/v1/usage", "by_day=true&days=7"},
 		{"usage defaults",
-			func(c *Client) error { return c.App.Usage(context.Background(), nil).Error() },
+			func(c *Client) error { _, err := c.App.Usage(context.Background(), nil); return err },
 			"/v1/usage", ""},
 		{"chats page",
 			func(c *Client) error {
-				return c.Archive.Chats(context.Background(), &ChatsRequest{Page: 2}).Error()
+				_, err := c.Archive.Chats(context.Background(), &ChatsRequest{Page: 2})
+				return err
 			},
 			"/v1/chats", "page=2"},
 	} {
@@ -467,7 +470,7 @@ func TestPathIDAndQuery(t *testing.T) {
 func TestVaultDeleteCarriesThePassphraseInTheBody(t *testing.T) {
 	c, last, sent := serve(t, `{"ok":true,"data":{}}`)
 
-	resp, err := c.Vault.Delete(context.Background(), VaultDeleteRequest{Passphrase: "the pale blue dot"}).Value()
+	resp, err := c.Vault.Delete(context.Background(), VaultDeleteRequest{Passphrase: "the pale blue dot"})
 	if err != nil {
 		t.Fatalf("Vault.Delete: %v", err)
 	}
@@ -492,7 +495,7 @@ func TestExportHandsBackTheDocument(t *testing.T) {
 		io.WriteString(w, `{"account_id":1256738876,"total":412,"filters":1,"messages":[]}`)
 	})
 
-	resp, err := c.Archive.Export(context.Background(), SearchRequest{}).Value()
+	resp, err := c.Archive.Export(context.Background(), SearchRequest{})
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -517,7 +520,7 @@ func TestWrongPassphraseIsNotFound(t *testing.T) {
 		io.WriteString(w, `{"ok":false,"error":{"code":"not_found","message":"not there"}}`)
 	})
 
-	err := c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"}).Error()
+	_, err := c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"})
 	if !IsCode(err, CodeNotFound) {
 		t.Fatalf("err = %v, want not_found", err)
 	}

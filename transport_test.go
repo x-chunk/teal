@@ -2,9 +2,11 @@ package teal
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -39,7 +41,7 @@ func TestDoDecodesEnvelopeAndCostHeaders(t *testing.T) {
 		Method: http.MethodPost,
 		Path:   "v1/messages/count",
 		Body:   map[string]any{"conditions": []any{}},
-	}).Value()
+	})
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
@@ -72,7 +74,10 @@ func TestRefusalBecomesError(t *testing.T) {
 			"limit":"search:daily","used":2000,"limit_value":2000,"reset_at":1757203200}}`)
 	})
 
-	err := c.Do[none](context.Background(), Request{Method: http.MethodGet, Path: "v1/app"}).Error()
+	resp, err := c.Do[none](context.Background(), Request{Method: http.MethodGet, Path: "v1/app"})
+	if resp != nil {
+		t.Errorf("resp = %+v, want nil on a refusal", resp)
+	}
 	if !IsCode(err, CodeQuotaExhausted) {
 		t.Fatalf("err = %v, want quota_exhausted", err)
 	}
@@ -81,7 +86,7 @@ func TestRefusalBecomesError(t *testing.T) {
 	if e.Limit != "search:daily" || e.Used != 2000 {
 		t.Errorf("error = %+v", e)
 	}
-	// A refusal's Result holds no Response, so its Meta travels on the error.
+	// A refusal answers with no Response, so its Meta travels on the error.
 	if e.Meta == nil || e.Meta.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("meta = %+v", e.Meta)
 	}
@@ -125,7 +130,7 @@ func TestRefusalWithASuccessStatusIsStillAnError(t *testing.T) {
 		io.WriteString(w, `{"ok":false,"error":{"code":"forbidden","message":"the plan does not open this"}}`)
 	})
 
-	err := c.App.Get(context.Background()).Error()
+	_, err := c.App.Get(context.Background())
 	if !IsCode(err, CodeForbidden) {
 		t.Fatalf("err = %v, want forbidden", err)
 	}
@@ -139,19 +144,23 @@ func TestServerFailureIsRetriedOnlyWhenItIsSafe(t *testing.T) {
 		call  func(*Client) error
 		calls int
 	}{
-		{"read", func(c *Client) error { return c.App.Get(context.Background()).Error() }, 3},
+		{"read", func(c *Client) error { _, err := c.App.Get(context.Background()); return err }, 3},
 		{"query", func(c *Client) error {
-			return c.Archive.Count(context.Background(), SearchRequest{}).Error()
+			_, err := c.Archive.Count(context.Background(), SearchRequest{})
+			return err
 		}, 3},
 		{"page", func(c *Client) error {
-			return c.Archive.SearchPage(context.Background(), SearchPageRequest{QueryID: "q", Page: 1}).Error()
+			_, err := c.Archive.SearchPage(context.Background(), SearchPageRequest{QueryID: "q", Page: 1})
+			return err
 		}, 3},
-		{"delete", func(c *Client) error { return c.Actions.Delete(context.Background(), 3).Error() }, 3},
+		{"delete", func(c *Client) error { _, err := c.Actions.Delete(context.Background(), 3); return err }, 3},
 		{"write", func(c *Client) error {
-			return c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"}).Error()
+			_, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"})
+			return err
 		}, 1},
 		{"patch", func(c *Client) error {
-			return c.Settings.UpdateLanguage(context.Background(), LanguageUpdateRequest{Language: "en"}).Error()
+			_, err := c.Settings.UpdateLanguage(context.Background(), LanguageUpdateRequest{Language: "en"})
+			return err
 		}, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -187,7 +196,7 @@ func TestRateRefusalIsRetriedEvenOnAWrite(t *testing.T) {
 		io.WriteString(w, `{"ok":false,"error":{"code":"rate_limited"}}`)
 	}, WithRetry(2, time.Millisecond))
 
-	if err := c.Vault.Store(context.Background(), VaultStoreRequest{}).Error(); err != nil {
+	if _, err := c.Vault.Store(context.Background(), VaultStoreRequest{}); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
 	if calls != 2 {
@@ -210,17 +219,20 @@ func TestRetryFollowsWhatTheRefusalSays(t *testing.T) {
 		{"busy write", http.StatusServiceUnavailable,
 			`{"ok":false,"error":{"code":"busy","message":"the vault is busy; retry shortly"}}`,
 			func(c *Client) error {
-				return c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"}).Error()
+				_, err := c.Vault.Store(context.Background(), VaultStoreRequest{Passphrase: "p", Plaintext: "s"})
+				return err
 			}, CodeBusy, 3},
 		{"locked vault", http.StatusTooManyRequests,
 			`{"ok":false,"error":{"code":"rate_limited","message":"locked","retry_after":900,"reason":"vault_locked"}}`,
 			func(c *Client) error {
-				return c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"}).Error()
+				_, err := c.Vault.Reveal(context.Background(), VaultRevealRequest{Passphrase: "wrong"})
+				return err
 			}, CodeRateLimited, 1},
 		{"model training", http.StatusServiceUnavailable,
 			`{"ok":false,"error":{"code":"unavailable","message":"fitting","retry_after":60,"reason":"model_training"}}`,
 			func(c *Client) error {
-				return c.Insights.Portrait(context.Background(), -100).Error()
+				_, err := c.Insights.Portrait(context.Background(), -100)
+				return err
 			}, CodeUnavailable, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -299,7 +311,7 @@ func TestRefusalSaysWhatWouldOpenIt(t *testing.T) {
 				io.WriteString(w, tc.body)
 			})
 
-			err := c.App.Get(context.Background()).Error()
+			_, err := c.App.Get(context.Background())
 			e, ok := AsError(err)
 			if !ok {
 				t.Fatalf("err = %v, want an *Error", err)
@@ -343,5 +355,29 @@ func TestWithTimeoutDoesNotMutateTheCallersClient(t *testing.T) {
 	}
 	if c.http.Timeout != time.Second {
 		t.Errorf("timeout = %s, want 1s — options must not depend on order", c.http.Timeout)
+	}
+}
+
+// An answer the client cannot decode was still charged, so its Meta survives
+// on the error.
+func TestDecodeFailureKeepsMeta(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Aether-Cost", "1000")
+		io.WriteString(w, `{"ok":true,"data":{"total":"many"}}`)
+	})
+
+	resp, err := c.Archive.Count(context.Background(), SearchRequest{})
+	if resp != nil {
+		t.Errorf("resp = %+v, want nil", resp)
+	}
+	var de *DecodeError
+	if !errors.As(err, &de) {
+		t.Fatalf("err = %v, want *DecodeError", err)
+	}
+	if de.Meta == nil || de.Meta.Cost != 1000 {
+		t.Errorf("meta = %+v", de.Meta)
+	}
+	if !strings.Contains(err.Error(), "v1/messages/count") {
+		t.Errorf("message = %q", err.Error())
 	}
 }

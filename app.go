@@ -2,8 +2,6 @@ package teal
 
 import (
 	"context"
-
-	"go.xchunk.org/anvil/v2/result"
 )
 
 // AppService reads the application, the account behind it and the deployment's
@@ -18,7 +16,7 @@ type AppService struct{ base }
 // on every metered response is the same number, one request fresher.
 //
 // GET /v1/app.
-func (s *AppService) Get(ctx context.Context) result.Result[Response[Application]] {
+func (s *AppService) Get(ctx context.Context) (*Response[Application], error) {
 	return wrap(s.get[Application](ctx, "v1/app", nil))
 }
 
@@ -28,7 +26,7 @@ func (s *AppService) Get(ctx context.Context) result.Result[Response[Application
 // error is not counted: it was refunded, and taken off the calls with it.
 //
 // GET /v1/usage.
-func (s *AppService) Usage(ctx context.Context, req *UsageRequest) result.Result[Response[Usage]] {
+func (s *AppService) Usage(ctx context.Context, req *UsageRequest) (*Response[Usage], error) {
 	return wrap(s.get[Usage](ctx, "v1/usage", req.query()))
 }
 
@@ -40,7 +38,7 @@ func (s *AppService) Usage(ctx context.Context, req *UsageRequest) result.Result
 // Account.MeasuredAt says when: polling it faster reads the same numbers.
 //
 // GET /v1/account.
-func (s *AppService) Account(ctx context.Context) result.Result[Response[Account]] {
+func (s *AppService) Account(ctx context.Context) (*Response[Account], error) {
 	return wrap(s.get[Account](ctx, "v1/account", nil))
 }
 
@@ -51,7 +49,7 @@ func (s *AppService) Account(ctx context.Context) result.Result[Response[Account
 // seconds old.
 //
 // GET /v1/quotas.
-func (s *AppService) Quotas(ctx context.Context) result.Result[Response[[]Quota]] {
+func (s *AppService) Quotas(ctx context.Context) (*Response[[]Quota], error) {
 	return wrap(s.get[[]Quota](ctx, "v1/quotas", nil))
 }
 
@@ -61,6 +59,6 @@ func (s *AppService) Quotas(ctx context.Context) result.Result[Response[[]Quota]
 // what is actually in force on this deployment.
 //
 // GET /v1/prices.
-func (s *AppService) Prices(ctx context.Context) result.Result[Response[Prices]] {
+func (s *AppService) Prices(ctx context.Context) (*Response[Prices], error) {
 	return wrap(s.get[Prices](ctx, "v1/prices", nil))
 }

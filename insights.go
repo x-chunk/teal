@@ -2,8 +2,6 @@ package teal
 
 import (
 	"context"
-
-	"go.xchunk.org/anvil/v2/result"
 )
 
 // InsightsService reads what the archive adds up to.
@@ -18,7 +16,7 @@ type InsightsService struct{ base }
 // answered CodeBusy with a RetryAfter, and the transport asks again.
 //
 // GET /v1/insights.
-func (s *InsightsService) Get(ctx context.Context) result.Result[Response[Insights]] {
+func (s *InsightsService) Get(ctx context.Context) (*Response[Insights], error) {
 	return wrap(s.get[Insights](ctx, "v1/insights", nil))
 }
 
@@ -43,6 +41,6 @@ func (s *InsightsService) Get(ctx context.Context) result.Result[Response[Insigh
 // request is charged, including a repeat of the same chat.
 //
 // GET /v1/portraits/{chat}.
-func (s *InsightsService) Portrait(ctx context.Context, chat int64) result.Result[Response[Portrait]] {
+func (s *InsightsService) Portrait(ctx context.Context, chat int64) (*Response[Portrait], error) {
 	return wrap(s.get[Portrait](ctx, "v1/portraits/"+itoa(chat), nil))
 }

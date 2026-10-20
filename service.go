@@ -9,12 +9,12 @@ import (
 
 // base is embedded in every service and folds one call down to one line:
 //
-//	func (s *AppService) Get(ctx context.Context) result.Result[Response[Application]] {
+//	func (s *AppService) Get(ctx context.Context) (*Response[Application], error) {
 //		return wrap(s.get[Application](ctx, "v1/app", nil))
 //	}
 //
 // The helpers speak (payload, meta, error), and wrap turns that into the
-// Result a public method answers with. The type is always written out,
+// (*Response, error) a public method answers with. The type is always written out,
 // because T is in the result and Go infers only from arguments.
 type base struct{ c *Client }
 
@@ -52,7 +52,7 @@ func (b base) postRaw(ctx context.Context, path string, body any) (io.ReadCloser
 // answers with a Response[struct{}], written out so the signature reads
 // without this alias:
 //
-//	func (s *VaultService) Rename(ctx context.Context, req VaultRenameRequest) result.Result[Response[struct{}]] {
+//	func (s *VaultService) Rename(ctx context.Context, req VaultRenameRequest) (*Response[struct{}], error) {
 //		return wrap(s.post[none](ctx, "v1/vault/entries/rename", req))
 //	}
 type none = struct{}

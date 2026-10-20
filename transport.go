@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"go.xchunk.org/anvil/v2/result"
 )
 
 // Request is one call to the API, before it becomes an *http.Request.
@@ -37,8 +35,8 @@ type Request struct {
 
 // Response is a successful answer: its payload, and the Meta it came with.
 //
-// Every method answers with a result.Result of one. A refusal holds an *Error
-// instead, which carries the Meta of the refused request in Error.Meta: the
+// Every method answers with a *Response and an error. On a refusal the
+// *Response is nil and the error is an *Error, which carries the Meta of the refused request in Error.Meta: the
 // API refunds before it answers, so the balance in it is the balance actually
 // left.
 type Response[T any] struct {
@@ -47,28 +45,30 @@ type Response[T any] struct {
 }
 
 // wrap is the one place the (payload, meta, error) the private layer speaks
-// becomes the Result the public API answers with.
+// becomes the (*Response, error) the public API answers with. A failure
+// answers with a nil *Response, never a half-filled one.
 //
 // The meta of a failure is dropped here and not lost: a refusal carries its
-// own in Error.Meta, and a request that never reached the API has none. Only
-// a successful answer that could not be read or decoded leaves without it.
-func wrap[T any](data T, meta *Meta, err error) result.Result[Response[T]] {
+// own in Error.Meta, a successful answer that could not be read or decoded
+// carries its own in DecodeError.Meta, and a request that never reached the
+// API has none.
+func wrap[T any](data T, meta *Meta, err error) (*Response[T], error) {
 	if err != nil {
-		return result.Err[Response[T]](err)
+		return nil, err
 	}
-	return result.Ok(Response[T]{Data: data, Meta: meta})
+	return &Response[T]{Data: data, Meta: meta}, nil
 }
 
 // Do sends req and decodes the envelope's data field into a T.
 //
-// T is in the result and not in the arguments, so it is always given
+// T is in the results and not in the arguments, so it is always given
 // explicitly:
 //
-//	app, err := c.Do[Application](ctx, Request{Method: http.MethodGet, Path: "v1/app"}).Value()
+//	app, err := c.Do[Application](ctx, Request{Method: http.MethodGet, Path: "v1/app"})
 //
 // Services reach for the get/post/patch/del helpers on base instead, which
 // are this with the boilerplate folded away.
-func (c *Client) Do[T any](ctx context.Context, req Request) result.Result[Response[T]] {
+func (c *Client) Do[T any](ctx context.Context, req Request) (*Response[T], error) {
 	return wrap(c.do[T](ctx, req))
 }
 
@@ -85,7 +85,7 @@ func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return out, meta, fmt.Errorf("teal: reading %s %s: %w", req.Method, req.Path, err)
+		return out, meta, &DecodeError{Method: req.Method, Path: req.Path, Meta: meta, Err: err}
 	}
 
 	var env struct {
@@ -93,7 +93,7 @@ func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return out, meta, fmt.Errorf("teal: decoding %s %s: %w", req.Method, req.Path, err)
+		return out, meta, &DecodeError{Method: req.Method, Path: req.Path, Meta: meta, Err: err}
 	}
 	// A refusal normally arrives with a status to match, and send has turned
 	// it into an *Error already. One that arrives with a 2xx would otherwise
@@ -105,7 +105,7 @@ func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 		return out, meta, nil
 	}
 	if err := json.Unmarshal(env.Data, &out); err != nil {
-		return out, meta, fmt.Errorf("teal: decoding %s %s: %w", req.Method, req.Path, err)
+		return out, meta, &DecodeError{Method: req.Method, Path: req.Path, Meta: meta, Err: err}
 	}
 	return out, meta, nil
 }
@@ -113,7 +113,7 @@ func (c *Client) do[T any](ctx context.Context, req Request) (T, *Meta, error) {
 // DoRaw sends req and hands back the undecoded body, for the one endpoint
 // that answers with a document instead of the envelope — the export. The
 // caller closes Response.Data.
-func (c *Client) DoRaw(ctx context.Context, req Request) result.Result[Response[io.ReadCloser]] {
+func (c *Client) DoRaw(ctx context.Context, req Request) (*Response[io.ReadCloser], error) {
 	return wrap(c.doRaw(ctx, req))
 }
 

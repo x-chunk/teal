@@ -2,8 +2,6 @@ package teal
 
 import (
 	"context"
-
-	"go.xchunk.org/anvil/v2/result"
 )
 
 // ActionsService manages the shortcuts an account keeps: the text a name
@@ -14,7 +12,7 @@ type ActionsService struct{ base }
 // behind, and how many more the plan allows.
 //
 // GET /v1/actions.
-func (s *ActionsService) List(ctx context.Context) result.Result[Response[ActionList]] {
+func (s *ActionsService) List(ctx context.Context) (*Response[ActionList], error) {
 	return wrap(s.get[ActionList](ctx, "v1/actions", nil))
 }
 
@@ -27,7 +25,7 @@ func (s *ActionsService) List(ctx context.Context) result.Result[Response[Action
 // plan's ceiling is charged once, as actions:entry, when it is created.
 //
 // POST /v1/actions.
-func (s *ActionsService) Create(ctx context.Context, req ActionCreateRequest) result.Result[Response[Action]] {
+func (s *ActionsService) Create(ctx context.Context, req ActionCreateRequest) (*Response[Action], error) {
 	return wrap(s.post[Action](ctx, "v1/actions", req))
 }
 
@@ -36,14 +34,14 @@ func (s *ActionsService) Create(ctx context.Context, req ActionCreateRequest) re
 // which would render as nothing.
 //
 // GET /v1/actions/placeholders.
-func (s *ActionsService) Placeholders(ctx context.Context) result.Result[Response[[]Placeholder]] {
+func (s *ActionsService) Placeholders(ctx context.Context) (*Response[[]Placeholder], error) {
 	return wrap(s.get[[]Placeholder](ctx, "v1/actions/placeholders", nil))
 }
 
 // Get reads one shortcut by its id.
 //
 // GET /v1/actions/{id}.
-func (s *ActionsService) Get(ctx context.Context, id int64) result.Result[Response[Action]] {
+func (s *ActionsService) Get(ctx context.Context, id int64) (*Response[Action], error) {
 	return wrap(s.get[Action](ctx, "v1/actions/"+itoa(id), nil))
 }
 
@@ -57,7 +55,7 @@ func (s *ActionsService) Get(ctx context.Context, id int64) result.Result[Respon
 // A request that sets nothing is refused with CodeBadRequest.
 //
 // PATCH /v1/actions/{id}.
-func (s *ActionsService) Update(ctx context.Context, id int64, req ActionUpdateRequest) result.Result[Response[Action]] {
+func (s *ActionsService) Update(ctx context.Context, id int64, req ActionUpdateRequest) (*Response[Action], error) {
 	return wrap(s.patch[Action](ctx, "v1/actions/"+itoa(id), req))
 }
 
@@ -65,6 +63,6 @@ func (s *ActionsService) Update(ctx context.Context, id int64, req ActionUpdateR
 // immediately.
 //
 // DELETE /v1/actions/{id}.
-func (s *ActionsService) Delete(ctx context.Context, id int64) result.Result[Response[struct{}]] {
+func (s *ActionsService) Delete(ctx context.Context, id int64) (*Response[struct{}], error) {
 	return wrap(s.del[none](ctx, "v1/actions/"+itoa(id)))
 }

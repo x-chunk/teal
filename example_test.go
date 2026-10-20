@@ -17,7 +17,7 @@ func ExampleNew() {
 		log.Fatal(err)
 	}
 
-	resp, err := c.App.Get(context.Background()).Value()
+	resp, err := c.App.Get(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func ExampleArchiveService_Search() {
 			{Field: "text", Mode: teal.MatchContains, Value: "invoice"},
 			{Field: "created", Mode: teal.MatchEquals, Conn: teal.ConnAnd, Value: "2026-09-01"},
 		},
-	}).Value()
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,22 +49,22 @@ func ExampleArchiveService_Search() {
 	}
 }
 
-// Every method answers with a result.Result, so a call can be chained rather
-// than taken apart: here the count is pulled out of the Response, and a
-// refusal of any kind reads as zero.
+// Every method answers with a *Response and an error: the count is in
+// Response.Data, and what it cost in Response.Meta.
 func ExampleArchiveService_Count() {
 	c, err := teal.New(os.Getenv("AETHER_KEY"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	photos := c.Archive.Count(context.Background(), teal.SearchRequest{
+	resp, err := c.Archive.Count(context.Background(), teal.SearchRequest{
 		Conditions: []teal.Condition{{Field: "media", Value: "photo"}},
-	}).
-		Map(func(r teal.Response[teal.CountResult]) int64 { return r.Data.Total }).
-		UnwrapOr(0)
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	fmt.Println(photos, "photos archived")
+	fmt.Println(resp.Data.Total, "photos archived")
 }
 
 // A search is billed once. Its other pages are turned by the query id its
@@ -78,14 +78,14 @@ func ExampleArchiveService_SearchPage() {
 
 	resp, err := c.Archive.Search(ctx, teal.SearchRequest{
 		Conditions: []teal.Condition{{Field: "text", Mode: teal.MatchContains, Value: "invoice"}},
-	}).Value()
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	res := resp.Data
 
 	for page := 1; page < res.Pages; page++ {
-		resp, err := c.Archive.SearchPage(ctx, teal.SearchPageRequest{QueryID: res.QueryID, Page: page}).Value()
+		resp, err := c.Archive.SearchPage(ctx, teal.SearchPageRequest{QueryID: res.QueryID, Page: page})
 		if teal.IsCode(err, teal.CodeNotFound) {
 			// Forgotten: past its half hour, or the service restarted.
 			break
@@ -106,10 +106,10 @@ func ExampleError_scope() {
 		log.Fatal(err)
 	}
 
-	err = c.Vault.Store(context.Background(), teal.VaultStoreRequest{
+	_, err = c.Vault.Store(context.Background(), teal.VaultStoreRequest{
 		Passphrase: "the pale blue dot",
 		Plaintext:  "AKIA…",
-	}).Error()
+	})
 	if e, ok := teal.AsError(err); ok && e.Code == teal.CodeScopeRequired {
 		fmt.Printf("open %s to this key on the application's screen in the bot\n", e.Scope)
 		return
@@ -127,7 +127,7 @@ func ExampleIsCode() {
 		log.Fatal(err)
 	}
 
-	err = c.Archive.Search(context.Background(), teal.SearchRequest{}).Error()
+	_, err = c.Archive.Search(context.Background(), teal.SearchRequest{})
 	switch {
 	case teal.IsCode(err, teal.CodeQuotaExhausted):
 		var e *teal.Error
@@ -154,7 +154,7 @@ func ExampleSettingsService_UpdateRetention() {
 	resp, err := c.Settings.UpdateRetention(context.Background(), teal.RetentionUpdateRequest{
 		Mode:       &mode,
 		TTLSeconds: &ttl,
-	}).Value()
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func ExampleArchiveService_Export() {
 		log.Fatal(err)
 	}
 
-	resp, err := c.Archive.Export(context.Background(), teal.SearchRequest{}).Value()
+	resp, err := c.Archive.Export(context.Background(), teal.SearchRequest{})
 	if err != nil {
 		log.Fatal(err)
 	}

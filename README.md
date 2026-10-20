@@ -8,9 +8,13 @@ c, err := teal.New(os.Getenv("AETHER_KEY")) // https://aether.xchunk.org by defa
 if err != nil {
 	return err
 }
-res, meta, err := c.Archive.Search(ctx, teal.SearchRequest{
+resp, err := c.Archive.Search(ctx, teal.SearchRequest{
 	Conditions: []teal.Condition{{Field: "text", Mode: teal.MatchContains, Value: "invoice"}},
 })
+if err != nil {
+	return err
+}
+fmt.Println(resp.Data.Total, resp.Meta.Cost) // the payload, and what it cost
 ```
 
 A self-hosted deployment is one option away: `teal.WithBaseURL("https://your-host")`.
@@ -24,15 +28,19 @@ go get go.xchunk.org/teal
 Up to v0.2.0 the module was `github.com/x-chunk/teal`. From v0.3.0 it is
 `go.xchunk.org/teal`: change the import path, nothing else.
 
+v0.5.0 drops `result.Result` and answers with `(*Response[T], error)`. It is a
+breaking change; [CHANGELOG.md](CHANGELOG.md) shows what to rewrite.
+
 ## Layout
 
 ```
 teal/
+├── CHANGELOG.md       — what changed in each version
 ├── teal.go            — package doc, version, default base URL
 ├── client.go          — the Client and its options
 ├── transport.go       — the HTTP client: Request, Response, (*Client).Do[T], DoRaw, Meta
 ├── service.go         — base, embedded in every service: get/post/patch/del[T]
-├── errors.go          — *Error, the code constants, IsCode/AsError
+├── errors.go          — *Error, *DecodeError, the code constants, IsCode/AsError
 ├── models.go          — every payload and request type
 ├── app.go             — /v1/app, /usage, /account, /quotas, /prices
 ├── archive.go         — /v1/messages/*, /messages/search/page, /chats, /fields
@@ -68,39 +76,39 @@ documentation one to one.
 **Query parameters are structs too**, with an unexported `query()` that builds
 the `url.Values`. A nil request means the API's own defaults.
 
-**Every method answers with a `result.Result[Response[T]]`**, from
-[`go.xchunk.org/anvil/v2/result`](https://pkg.go.dev/go.xchunk.org/anvil/v2/result):
-`Response.Data` is the payload and `Response.Meta` what it cost. One that
-answers `{}` has a `Response[struct{}]`, so its Meta is there all the same. A
-refusal holds the `*Error`, which carries its own Meta in `Error.Meta`.
+**Every method answers with `(*Response[T], error)`**: `Response.Data` is the
+payload and `Response.Meta` what it cost. One that answers `{}` has a
+`*Response[struct{}]`, so its Meta is there all the same. On an error the
+`*Response` is nil; a refusal is an `*Error`, which carries its own Meta in
+`Error.Meta`. An answer that was served and charged but could not be read or
+decoded is a `*DecodeError`, which keeps its Meta in `DecodeError.Meta`.
 
 ```go
-r, err := c.Archive.Search(ctx, req).Value()        // taken apart
-n := c.Archive.Count(ctx, req).                     // or chained
-	Map(func(r teal.Response[teal.CountResult]) int64 { return r.Data.Total }).
-	UnwrapOr(0)
-err = c.Vault.Delete(ctx, teal.VaultDeleteRequest{Passphrase: p}).Error()
-```
+r, err := c.Archive.Count(ctx, req)
+if err != nil {
+	return err
+}
+n := r.Data.Total
 
-`Result` is marked experimental in anvil: its API may still change, and this
-client follows it.
+_, err = c.Vault.Delete(ctx, teal.VaultDeleteRequest{Passphrase: p}) // only the error matters
+```
 
 ## Adding an endpoint
 
 Write the payload type in `models.go`, then one line in the service file:
 
 ```go
-func (s *AppService) Quotas(ctx context.Context) result.Result[Response[[]Quota]] {
+func (s *AppService) Quotas(ctx context.Context) (*Response[[]Quota], error) {
 	return wrap(s.get[[]Quota](ctx, "v1/quotas", nil))
 }
 ```
 
 The helpers on `base` are `get`, `post`, `patch`, `del` and `postRaw`, and
 they speak `(payload, *Meta, error)`; `wrap` is the one place that becomes the
-Result a public method answers with. `none` is the payload of an endpoint
+`(*Response[T], error)` a public method answers with. `none` is the payload of an endpoint
 answering `{}`, written out as `struct{}` in the public signature. When none of
 the helpers fits, reach for `s.c.Do[T](ctx, Request{…})`, which answers with a
-Result already.
+`(*Response[T], error)` already.
 
 ## Where the shapes come from
 

@@ -248,3 +248,19 @@ func codeForStatus(status int) string {
 		return CodeInternal
 	}
 }
+
+// DecodeError is a successful answer that could not be read or decoded. The
+// API did the work and charged for it, so the Meta of the answer is kept
+// here: without it the cost of the call would be lost along with the payload.
+type DecodeError struct {
+	Method string
+	Path   string
+	Meta   *Meta // never nil
+	Err    error // what the read or the decoder said
+}
+
+func (e *DecodeError) Error() string {
+	return fmt.Sprintf("teal: decoding %s %s: %v", e.Method, e.Path, e.Err)
+}
+
+func (e *DecodeError) Unwrap() error { return e.Err }
