@@ -4,8 +4,6 @@ import (
 	"context"
 	"io"
 	"strconv"
-
-	"go.xchunk.org/anvil/v2/result"
 )
 
 // ArchiveService reads the archive.
@@ -27,7 +25,7 @@ type ArchiveService struct{ base }
 // Fields lists what a condition may name.
 //
 // POST /v1/messages/search.
-func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) result.Result[Response[SearchResult]] {
+func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) (*Response[SearchResult], error) {
 	return wrap(s.query[SearchResult](ctx, "v1/messages/search", req))
 }
 
@@ -45,7 +43,7 @@ func (s *ArchiveService) Search(ctx context.Context, req SearchRequest) result.R
 // the search again.
 //
 // POST /v1/messages/search/page.
-func (s *ArchiveService) SearchPage(ctx context.Context, req SearchPageRequest) result.Result[Response[SearchResult]] {
+func (s *ArchiveService) SearchPage(ctx context.Context, req SearchPageRequest) (*Response[SearchResult], error) {
 	return wrap(s.query[SearchResult](ctx, "v1/messages/search/page", req))
 }
 
@@ -56,7 +54,7 @@ func (s *ArchiveService) SearchPage(ctx context.Context, req SearchPageRequest) 
 // billed as the query it is.
 //
 // POST /v1/messages/count.
-func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) result.Result[Response[CountResult]] {
+func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) (*Response[CountResult], error) {
 	return wrap(s.query[CountResult](ctx, "v1/messages/count", req))
 }
 
@@ -87,7 +85,7 @@ func (s *ArchiveService) Count(ctx context.Context, req SearchRequest) result.Re
 // paid for.
 //
 // POST /v1/messages/export.
-func (s *ArchiveService) Export(ctx context.Context, req SearchRequest) result.Result[Response[io.ReadCloser]] {
+func (s *ArchiveService) Export(ctx context.Context, req SearchRequest) (*Response[io.ReadCloser], error) {
 	return wrap(s.postRaw(ctx, "v1/messages/export", req))
 }
 
@@ -95,7 +93,7 @@ func (s *ArchiveService) Export(ctx context.Context, req SearchRequest) result.R
 // many messages each carries. A nil request asks for the first page.
 //
 // GET /v1/chats.
-func (s *ArchiveService) Chats(ctx context.Context, req *ChatsRequest) result.Result[Response[ChatList]] {
+func (s *ArchiveService) Chats(ctx context.Context, req *ChatsRequest) (*Response[ChatList], error) {
 	return wrap(s.get[ChatList](ctx, "v1/chats", req.query()))
 }
 
@@ -104,7 +102,7 @@ func (s *ArchiveService) Chats(ctx context.Context, req *ChatsRequest) result.Re
 // only unique inside a chat.
 //
 // GET /v1/messages/{id}.
-func (s *ArchiveService) Message(ctx context.Context, id int64) result.Result[Response[Message]] {
+func (s *ArchiveService) Message(ctx context.Context, id int64) (*Response[Message], error) {
 	return wrap(s.get[Message](ctx, "v1/messages/"+itoa(id), nil))
 }
 
@@ -114,7 +112,7 @@ func (s *ArchiveService) Message(ctx context.Context, id int64) result.Result[Re
 // CodeForbidden.
 //
 // GET /v1/messages/{id}/versions.
-func (s *ArchiveService) Versions(ctx context.Context, id int64) result.Result[Response[VersionList]] {
+func (s *ArchiveService) Versions(ctx context.Context, id int64) (*Response[VersionList], error) {
 	return wrap(s.get[VersionList](ctx, "v1/messages/"+itoa(id)+"/versions", nil))
 }
 
@@ -124,7 +122,7 @@ func (s *ArchiveService) Versions(ctx context.Context, id int64) result.Result[R
 // listed never reaches the database.
 //
 // GET /v1/fields.
-func (s *ArchiveService) Fields(ctx context.Context) result.Result[Response[[]Field]] {
+func (s *ArchiveService) Fields(ctx context.Context) (*Response[[]Field], error) {
 	return wrap(s.get[[]Field](ctx, "v1/fields", nil))
 }
 

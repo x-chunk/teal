@@ -2,8 +2,6 @@ package teal
 
 import (
 	"context"
-
-	"go.xchunk.org/anvil/v2/result"
 )
 
 // VaultService stores and opens secrets.
@@ -43,14 +41,14 @@ type VaultService struct{ base }
 // when it is written.
 //
 // POST /v1/vault/entries.
-func (s *VaultService) Store(ctx context.Context, req VaultStoreRequest) result.Result[Response[RecoveryCodes]] {
+func (s *VaultService) Store(ctx context.Context, req VaultStoreRequest) (*Response[RecoveryCodes], error) {
 	return wrap(s.post[RecoveryCodes](ctx, "v1/vault/entries", req))
 }
 
 // Reveal decrypts the entry a passphrase addresses and returns its plaintext.
 //
 // POST /v1/vault/entries/reveal.
-func (s *VaultService) Reveal(ctx context.Context, req VaultRevealRequest) result.Result[Response[VaultSecret]] {
+func (s *VaultService) Reveal(ctx context.Context, req VaultRevealRequest) (*Response[VaultSecret], error) {
 	return wrap(s.post[VaultSecret](ctx, "v1/vault/entries/reveal", req))
 }
 
@@ -60,7 +58,7 @@ func (s *VaultService) Reveal(ctx context.Context, req VaultRevealRequest) resul
 // CodeForbidden.
 //
 // POST /v1/vault/entries/rename.
-func (s *VaultService) Rename(ctx context.Context, req VaultRenameRequest) result.Result[Response[struct{}]] {
+func (s *VaultService) Rename(ctx context.Context, req VaultRenameRequest) (*Response[struct{}], error) {
 	return wrap(s.post[none](ctx, "v1/vault/entries/rename", req))
 }
 
@@ -69,7 +67,7 @@ func (s *VaultService) Rename(ctx context.Context, req VaultRenameRequest) resul
 // worthless the moment this returns.
 //
 // POST /v1/vault/entries/codes.
-func (s *VaultService) ReissueCodes(ctx context.Context, req VaultCodesRequest) result.Result[Response[RecoveryCodes]] {
+func (s *VaultService) ReissueCodes(ctx context.Context, req VaultCodesRequest) (*Response[RecoveryCodes], error) {
 	return wrap(s.post[RecoveryCodes](ctx, "v1/vault/entries/codes", req))
 }
 
@@ -82,7 +80,7 @@ func (s *VaultService) ReissueCodes(ctx context.Context, req VaultCodesRequest) 
 // published unconditionally: nothing on this path can suppress it.
 //
 // POST /v1/vault/entries/recover.
-func (s *VaultService) Recover(ctx context.Context, req VaultRecoverRequest) result.Result[Response[VaultRecovered]] {
+func (s *VaultService) Recover(ctx context.Context, req VaultRecoverRequest) (*Response[VaultRecovered], error) {
 	return wrap(s.post[VaultRecovered](ctx, "v1/vault/entries/recover", req))
 }
 
@@ -94,7 +92,7 @@ func (s *VaultService) Recover(ctx context.Context, req VaultRecoverRequest) res
 // about deleting their own secret.
 //
 // POST /v1/vault/entries/delete.
-func (s *VaultService) Delete(ctx context.Context, req VaultDeleteRequest) result.Result[Response[struct{}]] {
+func (s *VaultService) Delete(ctx context.Context, req VaultDeleteRequest) (*Response[struct{}], error) {
 	return wrap(s.post[none](ctx, "v1/vault/entries/delete", req))
 }
 
@@ -102,6 +100,6 @@ func (s *VaultService) Delete(ctx context.Context, req VaultDeleteRequest) resul
 // RecoveryCodes.EntryID. Free on every billing mode, like Delete.
 //
 // DELETE /v1/vault/entries/{id}.
-func (s *VaultService) DeleteByID(ctx context.Context, id int64) result.Result[Response[struct{}]] {
+func (s *VaultService) DeleteByID(ctx context.Context, id int64) (*Response[struct{}], error) {
 	return wrap(s.del[none](ctx, "v1/vault/entries/"+itoa(id)))
 }

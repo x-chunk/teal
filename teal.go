@@ -4,7 +4,7 @@
 //	if err != nil {
 //		return err
 //	}
-//	r, err := c.App.Get(ctx).Value()
+//	r, err := c.App.Get(ctx)
 //	if err != nil {
 //		return err
 //	}
