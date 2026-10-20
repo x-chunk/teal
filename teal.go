@@ -21,11 +21,11 @@
 // billing mode it was served under, the credits it spent, the balance left.
 //
 // Failures are *Error, carrying the API's own code and, where one code covers
-// several states, a reason. Branch on those with IsCode and Error.Reason —
-// on the error a method returns — and never on the
-// message, which is written for a person reading a log. A refusal carries its
-// Meta in Error.Meta: the API refunds before it answers, so the balance in it
-// is the balance actually left.
+// several states, a reason. Branch on those with IsCode and Error.Reason on
+// the error a method returns, and never on the message, which is written for
+// a person reading a log. A refusal carries its Meta in Error.Meta: the API
+// refunds before it answers, so the balance in it is the balance actually
+// left.
 //
 // The transport retries what can be sent again without doing anything twice:
 // a rate refusal and busy, honouring Retry-After, whatever the method —
