@@ -12,21 +12,17 @@
 //
 // Every endpoint hangs off a service on the client — App, Archive, Vault,
 // Actions, Insights and Settings — and every method answers with a
-// result.Result (go.xchunk.org/anvil/v2/result) of a Response: the payload in
-// Data, and the Meta it came with. An endpoint that answers {} has a
-// Response[struct{}], so its Meta is there all the same. A Result can be
-// taken apart with Value, or chained:
-//
-//	total := c.Archive.Count(ctx, req).
-//		Map(func(r teal.Response[teal.CountResult]) int64 { return r.Data.Total }).
-//		UnwrapOr(0)
+// (*Response[T], error): the payload in Response.Data, and the Meta it came
+// with in Response.Meta. An endpoint that answers {} has a
+// *Response[struct{}], so its Meta is there all the same. On an error the
+// *Response is nil.
 //
 // Meta is what the request cost, read from the X-Aether-* headers: the
 // billing mode it was served under, the credits it spent, the balance left.
 //
 // Failures are *Error, carrying the API's own code and, where one code covers
 // several states, a reason. Branch on those with IsCode and Error.Reason —
-// on the Result's Error, or the error Value returns — and never on the
+// on the error a method returns — and never on the
 // message, which is written for a person reading a log. A refusal carries its
 // Meta in Error.Meta: the API refunds before it answers, so the balance in it
 // is the balance actually left.
@@ -42,7 +38,7 @@
 package teal
 
 // Version is this client's version, sent in the User-Agent header.
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 // DefaultBaseURL is used when no other base URL is configured: the public
 // deployment the documentation at https://aether.xchunk.org/docs describes.
